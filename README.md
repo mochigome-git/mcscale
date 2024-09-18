@@ -4,15 +4,15 @@ This repository contains code for managing serial communication and interacting 
 
 ## Requirements
 
-- **Raspberry Pi 5**: The code is designed to run on a Raspberry Pi 5.
-- **Python**: Ensure Python is installed on your Raspberry Pi. You can install it using:
+- ```Raspberry Pi 5```: The code is designed to run on a Raspberry Pi 5.
+- ```Python```: Ensure Python is installed on your Raspberry Pi. You can install it using:
 ```bash
   sudo apt-get update
   sudo apt-get install python3
 ```
 Required Packages: 
-- **pyserial**: Used for serial communication
-- **pymcprotocol**: Used for communication with the PLC
+- ```pyserial```: Used for serial communication
+- ```pymcprotocol```: Used for communication with the PLC
 
 ## Installation
 1. Install pyserial:
@@ -25,7 +25,7 @@ sudo pip install --break-system-packages pymcprotocol
 ```
 
 ## Usage
-1. Set up your serial ports in the **serial_ports** dictionary.
+1. Set up your serial ports in the ```serial_ports``` dictionary.
 2. Configure the PLC connection with the appropriate IP and port.
 3. Run the script:
 ```bash
@@ -37,4 +37,4 @@ python3 main.py
 - Modify the pymc3e.connect() parameters to match your PLC’s IP address and port.
 
 ## License
-This project is licensed under the MIT License - see the [**LICENSE**](LICENSE) file for details.
+This project is licensed under the MIT License - see the [```LICENSE```](LICENSE) file for details.
