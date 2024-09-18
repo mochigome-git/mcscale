@@ -12,7 +12,7 @@ This repository contains code for managing serial communication and interacting 
 ```
 Required Packages: 
 - ```pyserial```: Used for serial communication
-- ```pymcprotocol```: Used for communication with the PLC
+- ```pymcprotocol```: Used for communication with the PLC. More details check [senrust/pymcprotocol](https://github.com/senrust/pymcprotocol)
 
 ## Installation
 1. Install pyserial:
