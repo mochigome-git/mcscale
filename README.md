@@ -37,4 +37,4 @@ python3 main.py
 - Modify the pymc3e.connect() parameters to match your PLC’s IP address and port.
 
 ## License
-This project is licensed under the MIT License - see the [```LICENSE```](LICENSE) file for details.
+This project is licensed under the Apache License - see the [```LICENSE```](LICENSE) file for details.
