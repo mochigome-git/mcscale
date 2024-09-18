@@ -1,0 +1,9 @@
+services:
+  mcscale:
+    image: python:3.9
+    volumes:
+      - .:/home/admin/mcscale
+    working_dir: /home/admin/mcscale
+    command: bash -c "pip install pymcprotocol && pip install pyserial && python -u main.py"
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
