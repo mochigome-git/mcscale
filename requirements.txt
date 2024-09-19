@@ -1,6 +1,6 @@
 certifi==2022.9.24
 chardet==5.1.0
-charset-normalizer==3.0.1
+charset-normalizer>=2,<3
 colorzero==2.0
 distro==1.8.0
 gpiozero==2.0
