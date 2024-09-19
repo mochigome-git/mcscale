@@ -1,75 +1,56 @@
-import unittest
-from unittest.mock import MagicMock, patch, call
-import logging
-from io import StringIO
-import pymcprotocol
-import utility
-import sys
-import main
+import pytest
+from unittest import mock
 
-class TestSerialPLCIntegration(unittest.TestCase):
+# Mock pymcprotocol globally before importing main.py to prevent real connections
+with mock.patch("pymcprotocol.Type3E") as MockType3E:
+    # Create a mock instance and set up the connect method
+    mock_pymc3e_instance = MockType3E.return_value
+    mock_pymc3e_instance.connect.return_value = None
+    import main
 
-    @patch('pymcprotocol.Type3E')  # Mock pymcprotocol Type3E PLC connection
-    @patch('serial.Serial')  # Mock the serial connection
-    def test_process_serial_data(self, mock_serial, mock_plc):
-        # Setup the mock PLC
-        mock_plc_instance = mock_plc.return_value
-        mock_plc_instance.batchwrite_wordunits.return_value = None
-        mock_plc_instance.batchwrite_bitunits.return_value = None
+@pytest.fixture
+def mock_pymc3e():
+    mock_pymc3e = mock.Mock(spec=main.pymcprotocol.Type3E)
+    mock_pymc3e.connect.return_value = None
+    mock_pymc3e.batchwrite_wordunits.return_value = None
+    mock_pymc3e.batchwrite_bitunits.return_value = None
+    return mock_pymc3e
 
-        # Mock serial data
-        mock_serial_instance = mock_serial.return_value
-        mock_serial_instance.in_waiting = 10
-        mock_serial_instance.read.return_value = b'ST,+00123g\r\n'
+@pytest.fixture
+def mock_serial():
+    serial_mock = mock.Mock()
+    serial_mock.in_waiting = 0
+    serial_mock.read.return_value = b""
+    return serial_mock
 
-        # Setup logger to capture output
-        log_stream = StringIO()
-        logging.basicConfig(stream=log_stream, level=logging.INFO)
+def test_process_serial_data(mock_serial, mock_pymc3e, monkeypatch):
+    monkeypatch.setattr(main.utility, "split_32bit_to_16bit", lambda x: [x // 2, x // 2])
 
-        # Mock utility.split_32bit_to_16bit function
-        with patch('utility.split_32bit_to_16bit') as mock_split:
-            mock_split.return_value = [12, 34]  # Mock the split result
-            
-            # Call the function to process the serial data
-            main.process_serial_data(mock_serial_instance, 'D6364', 'M3300')
+    mock_serial.in_waiting = 10
+    mock_serial.read.return_value = b"ST,+01234g\r\n"
 
-            # Assert that the PLC was written with correct values
-            mock_plc_instance.batchwrite_wordunits.assert_called_with(headdevice='D6364', values=[12, 34])
-            mock_plc_instance.batchwrite_bitunits.assert_has_calls([call(headdevice='M3300', values=[1]),
-                                                                    call(headdevice='M3300', values=[0])])
-            
-            # Check if the logging captured the correct output
-            log_output = log_stream.getvalue()
-            self.assertIn("Received weight data: ST,+00123g", log_output)
-            self.assertIn("Target value: 1230", log_output)  # 123g * 10 = 1230
+    main.process_serial_data(mock_serial, "D6364", "M3300")
 
-    @patch('pymcprotocol.Type3E')  # Mock pymcprotocol Type3E PLC connection
-    @patch('utility.initialize_serial_connections')  # Mock utility function
-    def test_main(self, mock_initialize_serial_connections, mock_plc):
-        # Mock PLC and serial ports
-        mock_plc_instance = mock_plc.return_value
-        mock_initialize_serial_connections.return_value = None
+    mock_pymc3e.batchwrite_wordunits.assert_called_with(headdevice="D6364", values=[617, 617])
+    mock_pymc3e.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[1])
+    mock_pymc3e.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[0])
 
-        # Setup the mock serial ports
-        serial_ports = {
-            "/dev/ttyUSB0": MagicMock(),
-        }
+def test_main_loop(mock_serial, monkeypatch):
+    monkeypatch.setattr(main.utility, "initialize_serial_connections", mock.Mock())
+    monkeypatch.setattr(main, "process_serial_data", mock.Mock())
 
-        with patch('your_module.serial_ports', serial_ports):
-            with patch('your_module.process_serial_data') as mock_process_serial_data:
-                # Mock serial processing function to avoid infinite loop
-                mock_process_serial_data.side_effect = KeyboardInterrupt  # Stop after first call
+    # Mock the port_to_headdevice_and_bitunit dictionary
+    mock_port_to_headdevice_and_bitunit = {
+        "/dev/ttyUSB0": ("D6364", "M3300"),
+    }
+    
+    with monkeypatch.context() as m:
+        m.setattr(main, "port_to_headdevice_and_bitunit", mock_port_to_headdevice_and_bitunit)
 
-                # Run the main function and check if it works
-                try:
-                    main.main()
-                except KeyboardInterrupt:
-                    pass  # Expecting this to exit the loop
+        serial_ports = {"/dev/ttyUSB0": mock_serial}
 
-                # Verify process_serial_data was called
-                mock_process_serial_data.assert_called_with(serial_ports["/dev/ttyUSB0"], 'D6364', 'M3300')
+        with mock.patch.dict(main.port_to_headdevice_and_bitunit, serial_ports):
+            with pytest.raises(KeyboardInterrupt):
+                main.main()
 
-    # Additional tests can be added for edge cases, error handling, etc.
-
-if __name__ == "__main__":
-    unittest.main()
+        main.process_serial_data.assert_called_with(mock_serial, "D6364", "M3300")

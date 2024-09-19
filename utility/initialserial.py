@@ -1,4 +1,5 @@
 import serial
+import logging 
 
 def initialize_serial_connections(serial_ports, baudrate=9600, bytesize='EIGHTBITS', parity='EVEN', stopbits='ONE', timeout=1):
     """
@@ -53,17 +54,22 @@ def initialize_serial_connections(serial_ports, baudrate=9600, bytesize='EIGHTBI
         'TWO': serial.STOPBITS_TWO
     }
 
+    # Configure logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     for port in serial_ports.keys():
         try:
             ser = serial.Serial(
                 port=port,
                 baudrate=baudrate,
-                bytesize=bytesize_map.get(bytesize, serial.SEVENBITS),
+                bytesize=bytesize_map.get(bytesize, serial.EIGHTBITS),
                 parity=parity_map.get(parity, serial.PARITY_EVEN),
                 stopbits=stopbits_map.get(stopbits, serial.STOPBITS_ONE),
                 timeout=timeout
             )
             serial_ports[port] = ser  # Store the initialized Serial object
-            print(f"Opened serial port {port} successfully.")
+            logging.info("Opened serial port %s successfully.", port)
         except serial.SerialException as e:
-            print(f"Failed to open serial port {port}: {e}")
+            logging.error("Failed to open serial port %s: %s", port, e)
+    
+    return serial_ports

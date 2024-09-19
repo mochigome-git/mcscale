@@ -34,7 +34,7 @@ def process_serial_data(ser, headdevice, bitunit):
                 try:
                     # Decode buffer to ASCII and strip terminators
                     decoded_data = buffer.decode('ascii').strip()
-                    logger.info(f"Received weight data: {decoded_data}")
+                    logger.info("Received weight data: %s", decoded_data)
 
                     # Check if the weight data ends with 'g' and remove it
                     if decoded_data.endswith('g'):
@@ -47,7 +47,7 @@ def process_serial_data(ser, headdevice, bitunit):
                         try:
                             weight_value = float(weight_data)  # Convert to float
                             target_value = int(weight_value * 10)  # Convert to integer by multiplying by 10
-                            logger.info(f"Target value: {target_value}")
+                            logger.info("Target value: %s", target_value)
 
                             # Convert target_value to 32-bit format and split into 16-bit words
                             converted_values = utility.split_32bit_to_16bit(target_value)
@@ -68,7 +68,7 @@ def process_serial_data(ser, headdevice, bitunit):
                             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
                             # print(f"PLC {headdevice} and bit unit {bitunit} updated after delay.")
                         except ValueError:
-                            print(f"Invalid weight data format: {weight_data}")
+                            logging.error("Invalid weight data format: %s", weight_data)
 
                 except UnicodeDecodeError:
                     print(f"Could not decode data: {buffer.hex()}")
@@ -103,7 +103,8 @@ def main():
         print("Terminating program.")
     finally:
         for ser in serial_ports.values():
-            ser.close()
+            if ser is not None:  # Check if serial port is initialized
+                ser.close()
         print("All serial connections closed.")
         pymc3e.close()
         print("PLC connection closed.")
