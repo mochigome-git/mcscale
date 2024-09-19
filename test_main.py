@@ -5,7 +5,7 @@ from io import StringIO
 import pymcprotocol
 import utility
 import sys
-import your_module  # Replace this with the actual name of the module containing your code
+import main
 
 class TestSerialPLCIntegration(unittest.TestCase):
 
@@ -31,7 +31,7 @@ class TestSerialPLCIntegration(unittest.TestCase):
             mock_split.return_value = [12, 34]  # Mock the split result
             
             # Call the function to process the serial data
-            your_module.process_serial_data(mock_serial_instance, 'D6364', 'M3300')
+            main.process_serial_data(mock_serial_instance, 'D6364', 'M3300')
 
             # Assert that the PLC was written with correct values
             mock_plc_instance.batchwrite_wordunits.assert_called_with(headdevice='D6364', values=[12, 34])
@@ -62,7 +62,7 @@ class TestSerialPLCIntegration(unittest.TestCase):
 
                 # Run the main function and check if it works
                 try:
-                    your_module.main()
+                    main.main()
                 except KeyboardInterrupt:
                     pass  # Expecting this to exit the loop
 
