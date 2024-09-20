@@ -1,5 +1,6 @@
 import pymcprotocol
 import utility
+import threading
 import time
 import logging
 import sys
@@ -24,9 +25,9 @@ if __name__ == "__main__":
     pymc3e = initialize_connection(plc_ip, plc_port)
     logger = logging.getLogger(__name__)
 
-def process_serial_data(ser, headdevice, bitunit):
+def process_serial_data(ser, headdevice, bitunit, stop_event):
     buffer = b""  # Buffer for binary data
-    while True:
+    while not stop_event.is_set(): 
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
             buffer += data
@@ -64,12 +65,15 @@ def process_serial_data(ser, headdevice, bitunit):
                             # Write to the specified bit unit
                             pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
                             
-                            time.sleep(11)
+                            # Wait for up to 11 seconds, checking for new data or stop_event every 0.5 seconds
+                            total_sleep_time = 0
+                            while total_sleep_time < 11:
+                                if stop_event.is_set() or ser.in_waiting > 0:
+                                    break
+                                time.sleep(0.5)  # Check more frequently to reduce delay
+                                total_sleep_time += 0.5
 
                             pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
-
-                            time.sleep(1)
-
                             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
                             # print(f"PLC {headdevice} and bit unit {bitunit} updated after delay.")
                         except ValueError:
@@ -84,35 +88,47 @@ def main():
     # Set up serial communication
     serial_ports = {
         "/dev/ttyUSB0": None,
-        #"/dev/ttyUSB1": None,
-        #"/dev/ttyUSB2": None
+        # "/dev/ttyUSB1": None,
+        # "/dev/ttyUSB2": None
     }
 
-    # Initialize the serial port
+    # Initialize the serial ports
     utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
 
-    # Example mapping of serial ports to PLC head devices and bit units
+    # Mapping of serial ports to PLC head devices and bit units
     port_to_headdevice_and_bitunit = {
         "/dev/ttyUSB0": ("D6364", "M3300"),
-       # "/dev/ttyUSB1": ("D6464", "M3400"),
-       # "/dev/ttyUSB2": ("D6564", "M3500")
+        # "/dev/ttyUSB1": ("D6464", "M3400"),
+        # "/dev/ttyUSB2": ("D6564", "M3500")
     }
+
+    stop_event = threading.Event()
 
     try:
         while True:
             for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
                 ser = serial_ports[port]
-                process_serial_data(ser, headdevice, bitunit)
+                if ser and ser.in_waiting > 0:  # Check for new data
+                    if stop_event.is_set():
+                        stop_event.clear()  # Clear stop_event to process new data
+
+                    # Start new thread to handle the new data
+                    process_thread = threading.Thread(
+                        target=process_serial_data, 
+                        args=(ser, headdevice, bitunit, stop_event)
+                    )
+                    process_thread.start()
+                    process_thread.join()  # Wait for the process to finish before processing more data
 
     except KeyboardInterrupt:
-        print("Terminating program.")
+        logger.info("Terminating program.")
     finally:
         for ser in serial_ports.values():
-            if ser is not None:  # Check if serial port is initialized
+            if ser is not None:
                 ser.close()
-        print("All serial connections closed.")
+        logger.info("All serial connections closed.")
         pymc3e.close()
-        print("PLC connection closed.")
+        logger.info("PLC connection closed.")
 
 if __name__ == "__main__":
     main()
