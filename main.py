@@ -30,22 +30,28 @@ logger = logging.getLogger(__name__)
 # Set up serial communication
 serial_ports = {
     "/dev/ttyUSB0": None,
-    # "/dev/ttyUSB1": None,
-    # "/dev/ttyUSB2": None
+    "/dev/ttyUSB1": None,
+    "/dev/ttyUSB2": None
 }
 
 # Mapping of serial ports to PLC head devices and bit units
 port_to_headdevice_and_bitunit = {
     "/dev/ttyUSB0": ("D6364", "M3300"),
-    # "/dev/ttyUSB1": ("D6464", "M3400"),
-    # "/dev/ttyUSB2": ("D6564", "M3500")
+    "/dev/ttyUSB1": ("D6464", "M3400"),
+    "/dev/ttyUSB2": ("D6564", "M3500")
 }
 
-def initialize_connection(plc_ip, plc_port):
-    """Initialize connection to PLC."""
+def initialize_connection(plc_ip, plc_port, retries=5, delay=2):
+    """Initialize connection to PLC with retries."""
     pymc3e = pymcprotocol.Type3E()
-    pymc3e.connect(plc_ip, plc_port)
-    return pymc3e
+    for attempt in range(retries):
+        try:
+            pymc3e.connect(plc_ip, plc_port)
+            return pymc3e
+        except TimeoutError:
+            logger.error("Connection attempt %d failed. Retrying in %d seconds...", attempt + 1, delay)
+            time.sleep(delay)
+    raise ConnectionError("Failed to connect to PLC after multiple attempts.")
 
 def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
     """Process incoming serial data."""
@@ -63,7 +69,7 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                 try:
                     # Decode buffer to ASCII and strip terminators
                     decoded_data = buffer.decode('ascii').strip()
-                    logger.info("Received weight data: %s", decoded_data)
+                    logger.info("Received weight data from %s : %s", ser.port, decoded_data)
 
                     # Check if the weight data ends with 'g' and remove it
                     if decoded_data.endswith('g'):
@@ -105,6 +111,8 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                     print(f"Could not decode data: {buffer.hex()}")
 
                 buffer = b""  # Clear buffer after processing data
+        else:
+            time.sleep(0.1)  # Reduce CPU usage when no data is available
 
 def main(pymc3e):
     """Main function to run the PLC connection and data processing."""
@@ -126,6 +134,7 @@ def main(pymc3e):
                         args=(ser, headdevice, bitunit, pymc3e, stop_event)
                     )
                     process_thread.start()
+                    time.sleep(0.1)
                     process_thread.join()  # Wait for the process to finish before processing more data
 
     except KeyboardInterrupt:
