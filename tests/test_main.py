@@ -11,6 +11,7 @@ import main
 def mock_pymcprotocol_fixture():
     with mock.patch("main.pymcprotocol.Type3E") as MockType3E:
         mock_pymc3e_instance = MockType3E.return_value
+        # Mock the connection method to avoid TimeoutError
         mock_pymc3e_instance.connect.return_value = None
         mock_pymc3e_instance.batchwrite_wordunits.return_value = None
         mock_pymc3e_instance.batchwrite_bitunits.return_value = None
