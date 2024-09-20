@@ -1,9 +1,22 @@
-import pymcprotocol
-import utility
+"""
+This module handles serial communication with PLC devices, processes incoming data,
+and interacts with the pymcprotocol library for reading and writing data to PLCs.
+
+Modules:
+- threading: For concurrent execution and handling of serial data processing.
+- time: For managing timing and delays.
+- logging: For logging messages and errors.
+- sys: For system-specific parameters and functions.
+- pymcprotocol: For communication with PLC devices using the MC Protocol 3E.
+- utility: Custom utility functions for data handling.
+"""
+
 import threading
 import time
 import logging
 import sys
+import pymcprotocol
+import utility
 
 # Configure logging to include date and time
 logging.basicConfig(
@@ -12,20 +25,30 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',  # Include timestamp, log level, and message
     datefmt='%Y-%m-%d %H:%M:%S'  # Specify date and time format
 )
+logger = logging.getLogger(__name__)
+
+# Set up serial communication
+serial_ports = {
+    "/dev/ttyUSB0": None,
+    # "/dev/ttyUSB1": None,
+    # "/dev/ttyUSB2": None
+}
+
+# Mapping of serial ports to PLC head devices and bit units
+port_to_headdevice_and_bitunit = {
+    "/dev/ttyUSB0": ("D6364", "M3300"),
+    # "/dev/ttyUSB1": ("D6464", "M3400"),
+    # "/dev/ttyUSB2": ("D6564", "M3500")
+}
 
 def initialize_connection(plc_ip, plc_port):
+    """Initialize connection to PLC."""
     pymc3e = pymcprotocol.Type3E()
     pymc3e.connect(plc_ip, plc_port)
     return pymc3e
 
-# Initialize the single PLC connection
-if __name__ == "__main__":
-    plc_ip = "192.168.3.61"
-    plc_port = 5014
-    pymc3e = initialize_connection(plc_ip, plc_port)
-    logger = logging.getLogger(__name__)
-
-def process_serial_data(ser, headdevice, bitunit, stop_event):
+def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
+    """Process incoming serial data."""
     buffer = b""  # Buffer for binary data
     while not stop_event.is_set(): 
         if ser.in_waiting > 0:
@@ -49,10 +72,9 @@ def process_serial_data(ser, headdevice, bitunit, stop_event):
 
                         # Remove any unwanted characters (e.g., leading '+') and convert to float
                         weight_data = weight_data.lstrip('ST,+')  # Remove leading '+'
-                        
                         try:
                             weight_value = float(weight_data)  # Convert to float
-                            target_value = int(weight_value * 10)  # Convert to integer by multiplying by 10
+                            target_value = int(weight_value * 10)  # Convert to int & multiplying by 10
                             # logger.info("Target value: %s", target_value)
 
                             # Convert target_value to 32-bit format and split into 16-bit words
@@ -61,7 +83,7 @@ def process_serial_data(ser, headdevice, bitunit, stop_event):
 
                             # Write the split 16-bit values to the PLC
                             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
-                            
+
                             # Write to the specified bit unit
                             pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
                             
@@ -84,24 +106,10 @@ def process_serial_data(ser, headdevice, bitunit, stop_event):
 
                 buffer = b""  # Clear buffer after processing data
 
-def main():
-    # Set up serial communication
-    serial_ports = {
-        "/dev/ttyUSB0": None,
-        # "/dev/ttyUSB1": None,
-        # "/dev/ttyUSB2": None
-    }
-
+def main(pymc3e):
+    """Main function to run the PLC connection and data processing."""
     # Initialize the serial ports
     utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
-
-    # Mapping of serial ports to PLC head devices and bit units
-    port_to_headdevice_and_bitunit = {
-        "/dev/ttyUSB0": ("D6364", "M3300"),
-        # "/dev/ttyUSB1": ("D6464", "M3400"),
-        # "/dev/ttyUSB2": ("D6564", "M3500")
-    }
-
     stop_event = threading.Event()
 
     try:
@@ -115,7 +123,7 @@ def main():
                     # Start new thread to handle the new data
                     process_thread = threading.Thread(
                         target=process_serial_data, 
-                        args=(ser, headdevice, bitunit, stop_event)
+                        args=(ser, headdevice, bitunit, pymc3e, stop_event)
                     )
                     process_thread.start()
                     process_thread.join()  # Wait for the process to finish before processing more data
@@ -130,5 +138,8 @@ def main():
         pymc3e.close()
         logger.info("PLC connection closed.")
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__" or __name__ == "__test__":
+    PLC_IP = "192.168.3.61"
+    PLC_PORT = 5014
+    pymc3e = initialize_connection(PLC_IP, PLC_PORT)
+    main(pymc3e)

@@ -2,6 +2,7 @@ import pytest
 from unittest import mock
 import sys
 import os
+import threading
 
 # Add parent directory to Python path so that "main.py" can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,15 +25,18 @@ def pymc3e_fixture(mock_pymcprotocol_fixture):
 def serial_mock():
     serial_instance = mock.Mock()
     serial_instance.in_waiting = 10  # Set to simulate available bytes
-    serial_instance.read.return_value = b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09'  # Example data
+    serial_instance.read.return_value = b'ST,+0001234g\r\n'  # Example weight data
     return serial_instance
 
 def test_process_serial_data(serial_mock, pymc3e_fixture, monkeypatch):
     # Mock the utility function for splitting values
     monkeypatch.setattr(main.utility, "split_32bit_to_16bit", lambda x: [x // 2, x // 2])
 
-    # Call the function under test
-    main.process_serial_data(serial_mock, "D6364", "M3300")
+    # Create a stop event for threading
+    stop_event = threading.Event()
+
+    # Call the function under test with the required stop_event
+    main.process_serial_data(serial_mock, "D6364", "M3300", pymc3e_fixture, stop_event)
 
     # Assertions to verify the expected calls
     pymc3e_fixture.batchwrite_wordunits.assert_called_with(headdevice="D6364", values=[617, 617])
@@ -40,6 +44,7 @@ def test_process_serial_data(serial_mock, pymc3e_fixture, monkeypatch):
     pymc3e_fixture.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[0])
 
 def test_main_loop(serial_mock, monkeypatch):
+    # Mock the serial connections initializer
     monkeypatch.setattr(main.utility, "initialize_serial_connections", mock.Mock())
     monkeypatch.setattr(main, "process_serial_data", mock.Mock())
 
@@ -51,14 +56,15 @@ def test_main_loop(serial_mock, monkeypatch):
     # Set the mock dictionary in the main module
     monkeypatch.setattr(main, "port_to_headdevice_and_bitunit", mock_port_to_headdevice_and_bitunit)
 
-    # Replace main.main with a version that doesn't run indefinitely
-    def mock_main():
+    # Replace the main.main loop logic with a mock loop for the test
+    def mock_main(pymc3e):
+        stop_event = threading.Event()  # Create a stop event
         for port, (headdevice, bitunit) in mock_port_to_headdevice_and_bitunit.items():
             ser = serial_mock
-            main.process_serial_data(ser, headdevice, bitunit)
+            main.process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
 
-    with mock.patch('main.main', mock_main):
-        mock_main()
+    with mock.patch('main.main', side_effect=mock_main) as mock_main_function:
+        mock_main_function(pymc3e_fixture)
 
     # Verify that process_serial_data was called correctly
-    main.process_serial_data.assert_called_with(serial_mock, "D6364", "M3300")
+    main.process_serial_data.assert_called_with(serial_mock, "D6364", "M3300", mock.ANY)
