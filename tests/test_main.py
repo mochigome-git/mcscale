@@ -24,7 +24,7 @@ def pymc3e_fixture(mock_pymcprotocol_fixture):
 @pytest.fixture
 def serial_mock():
     serial_instance = mock.Mock()
-    serial_instance.in_waiting = 10  # Set to simulate available bytes
+    serial_instance.in_waiting = 10  # Simulate available bytes
     serial_instance.read.return_value = b'ST,+0001234g\r\n'  # Example weight data
     return serial_instance
 
@@ -56,15 +56,17 @@ def test_main_loop(serial_mock, monkeypatch):
     # Set the mock dictionary in the main module
     monkeypatch.setattr(main, "port_to_headdevice_and_bitunit", mock_port_to_headdevice_and_bitunit)
 
-    # Replace the main.main loop logic with a mock loop for the test
+    # Replace the main loop logic with a controlled execution for the test
     def mock_main(pymc3e):
         stop_event = threading.Event()  # Create a stop event
         for port, (headdevice, bitunit) in mock_port_to_headdevice_and_bitunit.items():
             ser = serial_mock
             main.process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
 
+    # Mock the infinite loop in main.main
     with mock.patch('main.main', side_effect=mock_main) as mock_main_function:
         mock_main_function(pymc3e_fixture)
 
     # Verify that process_serial_data was called correctly
-    main.process_serial_data.assert_called_with(serial_mock, "D6364", "M3300", mock.ANY)
+    main.process_serial_data.assert_called_with(serial_mock, "D6364", "M3300", pymc3e_fixture, mock.ANY)
+

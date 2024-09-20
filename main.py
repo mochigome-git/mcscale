@@ -15,6 +15,7 @@ import threading
 import time
 import logging
 import sys
+import queue
 import pymcprotocol
 import utility
 
@@ -116,9 +117,23 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
 
 def main(pymc3e):
     """Main function to run the PLC connection and data processing."""
-    # Initialize the serial ports
     utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
     stop_event = threading.Event()
+    data_queue = queue.Queue()  # Create a queue for incoming data processing
+
+    def worker():
+        while not stop_event.is_set():
+            try:
+                ser, headdevice, bitunit = data_queue.get(timeout=1)  # Block until there's data or timeout
+                process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
+            except queue.Empty:
+                continue  # Continue if the queue is empty
+
+    # Start a pool of worker threads
+    num_worker_threads = 4  # Adjust based on your needs
+    threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
+    for thread in threads:
+        thread.start()
 
     try:
         while True:
@@ -126,20 +141,19 @@ def main(pymc3e):
                 ser = serial_ports[port]
                 if ser and ser.in_waiting > 0:  # Check for new data
                     if stop_event.is_set():
-                        stop_event.clear()  # Clear stop_event to process new data
+                        stop_event.clear()
 
-                    # Start new thread to handle the new data
-                    process_thread = threading.Thread(
-                        target=process_serial_data, 
-                        args=(ser, headdevice, bitunit, pymc3e, stop_event)
-                    )
-                    process_thread.start()
-                    time.sleep(0.1)
-                    process_thread.join()  # Wait for the process to finish before processing more data
+                    # Add serial data processing task to the queue
+                    data_queue.put((ser, headdevice, bitunit))
+
+            time.sleep(0.1)  # Reduce CPU usage in the main loop
 
     except KeyboardInterrupt:
         logger.info("Terminating program.")
     finally:
+        stop_event.set()  # Signal worker threads to stop
+        for thread in threads:
+            thread.join()  # Wait for all worker threads to finish
         for ser in serial_ports.values():
             if ser is not None:
                 ser.close()
@@ -147,7 +161,7 @@ def main(pymc3e):
         pymc3e.close()
         logger.info("PLC connection closed.")
 
-if __name__ == "__main__" or __name__ == "__test__":
+if __name__ == "__main__":
     PLC_IP = "192.168.3.61"
     PLC_PORT = 5014
     pymc3e = initialize_connection(PLC_IP, PLC_PORT)
