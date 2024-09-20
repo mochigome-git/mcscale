@@ -9,10 +9,9 @@ import main
 
 @pytest.fixture(scope="module", autouse=True)
 def mock_pymcprotocol_fixture():
-    with mock.patch("main.pymcprotocol.Type3E") as MockType3E:
-        mock_pymc3e_instance = MockType3E.return_value
-        # Mock the connection method to avoid TimeoutError
-        mock_pymc3e_instance.connect.return_value = None
+    with mock.patch("main.initialize_connection") as MockInitializeConnection:
+        mock_pymc3e_instance = MockInitializeConnection.return_value
+        # Mock the connection and any other method you expect to be called
         mock_pymc3e_instance.batchwrite_wordunits.return_value = None
         mock_pymc3e_instance.batchwrite_bitunits.return_value = None
         yield mock_pymc3e_instance

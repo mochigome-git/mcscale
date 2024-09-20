@@ -12,12 +12,17 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'  # Specify date and time format
 )
 
+def initialize_connection(plc_ip, plc_port):
+    pymc3e = pymcprotocol.Type3E()
+    pymc3e.connect(plc_ip, plc_port)
+    return pymc3e
+
 # Initialize the single PLC connection
-plc_ip = "192.168.3.61"
-plc_port = 5014
-pymc3e = pymcprotocol.Type3E()
-pymc3e.connect(plc_ip, plc_port)
-logger = logging.getLogger(__name__)
+if __name__ == "__main__":
+    plc_ip = "192.168.3.61"
+    plc_port = 5014
+    pymc3e = initialize_connection(plc_ip, plc_port)
+    logger = logging.getLogger(__name__)
 
 def process_serial_data(ser, headdevice, bitunit):
     buffer = b""  # Buffer for binary data
@@ -47,7 +52,7 @@ def process_serial_data(ser, headdevice, bitunit):
                         try:
                             weight_value = float(weight_data)  # Convert to float
                             target_value = int(weight_value * 10)  # Convert to integer by multiplying by 10
-                            logger.info("Target value: %s", target_value)
+                            # logger.info("Target value: %s", target_value)
 
                             # Convert target_value to 32-bit format and split into 16-bit words
                             converted_values = utility.split_32bit_to_16bit(target_value)
