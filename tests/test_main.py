@@ -3,6 +3,7 @@ from unittest import mock
 import sys
 import os
 import threading
+from itertools import cycle
 
 # Add parent directory to Python path so that "main.py" can be imported
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,18 +31,24 @@ def serial_mock():
 
 def test_process_serial_data(serial_mock, pymc3e_fixture, monkeypatch):
     # Mock the utility function for splitting values
-    monkeypatch.setattr(main.utility, "split_32bit_to_16bit", lambda x: [x // 2, x // 2])
+    monkeypatch.setattr(main.utility, "split_32bit_to_16bit", lambda x: [x // 65536, x % 65536])
 
     # Create a stop event for threading
     stop_event = threading.Event()
 
-    # Call the function under test with the required stop_event
+    # Use `cycle` to repeat serial input indefinitely
+    serial_mock.read.side_effect = cycle([b'ST,+0001234', b'g\r\n'])
+
+    # Call the function under test
     main.process_serial_data(serial_mock, "D6364", "M3300", pymc3e_fixture, stop_event)
 
-    # Assertions to verify the expected calls
-    pymc3e_fixture.batchwrite_wordunits.assert_called_with(headdevice="D6364", values=[617, 617])
+    # Assert the correct PLC commands were sent
+    pymc3e_fixture.batchwrite_wordunits.assert_called_with(headdevice="D6364", values=[0, 617])
     pymc3e_fixture.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[1])
     pymc3e_fixture.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[0])
+
+    # Ensure serial read was called
+    assert serial_mock.read.call_count == 2
 
 def test_main_loop(serial_mock, monkeypatch):
     # Mock the serial connections initializer

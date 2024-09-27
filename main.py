@@ -15,6 +15,7 @@ import threading
 import time
 import logging
 import sys
+import re
 import queue
 import pymcprotocol
 import utility
@@ -72,15 +73,15 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                     decoded_data = buffer.decode('ascii').strip()
                     logger.info("Received weight data from %s : %s", ser.port, decoded_data)
 
-                    # Check if the weight data ends with 'g' and remove it
-                    if decoded_data.endswith('g'):
-                        weight_data = decoded_data.rstrip('g').strip()
-                        # print(f"Raw weight data extracted: {weight_data}")
-
-                        # Remove any unwanted characters (e.g., leading '+') and convert to float
-                        weight_data = weight_data.lstrip('ST,+')  # Remove leading '+'
+                    # Clean up the data by removing duplicate 'ST,' and unwanted characters
+                    cleaned_data = re.sub(r'(ST,)+', 'ST,', decoded_data)
+                    
+                    # Use regex to match valid weight data format 'ST,+000000 g' with optional whitespace after the number
+                    match = re.search(r'ST,\+(\d{1,6}(\.\d)?)\s*g', cleaned_data)
+                    if match:
+                        weight_str = match.group(1)
                         try:
-                            weight_value = float(weight_data)  # Convert to float
+                            weight_value = float(weight_str)  # Convert to float
                             target_value = int(weight_value * 10)  # Convert to int & multiplying by 10
                             # logger.info("Target value: %s", target_value)
 
@@ -106,10 +107,12 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
                             # print(f"PLC {headdevice} and bit unit {bitunit} updated after delay.")
                         except ValueError:
-                            logging.error("Invalid weight data format: %s", weight_data)
+                            logging.error("Failed to convert weight data to float: %s", weight_str)
+                    else:
+                        logging.error("Invalid weight data format after cleanup: %s", cleaned_data)
 
                 except UnicodeDecodeError:
-                    print(f"Could not decode data: {buffer.hex()}")
+                    logger.error("Could not decode data: %s", buffer.hex())
 
                 buffer = b""  # Clear buffer after processing data
         else:
