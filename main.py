@@ -65,47 +65,50 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                 data = ser.read(ser.in_waiting)
                 buffer += data  # Append new data to the buffer
 
-                # Decode buffer to ASCII
+                # Try to decode the buffer to ASCII (don't clear it yet)
                 try:
                     decoded_data = buffer.decode('ascii')
+                    
+                    # Check if we have a complete message (ends with \r\n or a full valid format)
+                    if '\r\n' in decoded_data:
+                        # Split the data by lines (if multiple messages are received)
+                        messages = decoded_data.splitlines()
 
-                    # Split the data by lines (if multiple messages are received)
-                    messages = decoded_data.splitlines()
+                        for message in messages:
+                            # Clean up the message
+                            cleaned_data = message.strip()
 
-                    for message in messages:
-                        # Clean up the message
-                        cleaned_data = message.strip()
+                            # Validate the data format
+                            match = re.match(r'^ST,\+(\d{6}\.\d)\s*g$', cleaned_data)
+                            if match:
+                                weight_str = match.group(1)
+                                try:
+                                    weight_value = float(weight_str)  # Convert to float
+                                    target_value = int(weight_value * 10)  # Convert to int & multiply by 10
+                                    logger.info("Received weight data from %s : %s", ser.port, decoded_data)
 
-                        # Validate the data format
-                        match = re.match(r'^ST,\+(\d{6}\.\d)\s*g$', cleaned_data)
-                        if match:
-                            weight_str = match.group(1)
-                            try:
-                                weight_value = float(weight_str)  # Convert to float
-                                target_value = int(weight_value * 10)  # Convert to int & multiply by 10
-                                logger.info("Received weight data from %s : %s", ser.port, decoded_data)
-                                # Convert target_value to 32-bit format and split into 16-bit words
-                                converted_values = utility.split_32bit_to_16bit(target_value)
+                                    # Convert target_value to 32-bit format and split into 16-bit words
+                                    converted_values = utility.split_32bit_to_16bit(target_value)
 
-                                # Write the split 16-bit values to the PLC
-                                pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
+                                    # Write the split 16-bit values to the PLC
+                                    pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
 
-                                # Write to the specified bit unit and wait for a specified time
-                                pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
-                                wait_with_check(stop_event, ser, 11, buffer)  # Pass buffer to process during wait
+                                    # Write to the specified bit unit and wait for a specified time
+                                    pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
+                                    wait_with_check(stop_event, ser, 11, buffer)  # Pass buffer to process during wait
 
-                                pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
-                                # pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
+                                    pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
 
-                            except ValueError:
-                                logger.error("Failed to convert weight data to float: %s", weight_str)
-                        else:
-                            logger.error("Invalid weight data format: %s", cleaned_data)
+                                except ValueError:
+                                    logger.error("Failed to convert weight data to float: %s", weight_str)
+                            else:
+                                logger.error("Invalid weight data format: %s", cleaned_data)
+                        
+                        # Clear the buffer only if the full message was processed successfully
+                        buffer = b""  # Clear buffer after processing
 
                 except UnicodeDecodeError:
                     logger.error("Could not decode data: %s", buffer.hex())
-
-                buffer = b""  # Clear buffer after processing
 
         except serial.SerialException as e:
             logger.error("Serial error on %s: %s", ser.port, e)
