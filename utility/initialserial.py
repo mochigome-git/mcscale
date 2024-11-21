@@ -1,7 +1,7 @@
 import serial
 import logging 
 
-def initialize_serial_connections(serial_ports, baudrate=9600, bytesize='EIGHTBITS', parity='EVEN', stopbits='ONE', timeout=1):
+def initialize_serial_connections(serial_ports, baudrate=2400, bytesize='SEVENBITS', parity='EVEN', stopbits='ONE', timeout=1):
     """
     Initializes serial connections for all ports in the serial_ports dictionary.
 
@@ -61,8 +61,8 @@ def initialize_serial_connections(serial_ports, baudrate=9600, bytesize='EIGHTBI
         try:
             ser = serial.Serial(
                 port=port,
-                baudrate=baudrate,
-                bytesize=bytesize_map.get(bytesize, serial.EIGHTBITS),
+                baudrate=19200,
+                bytesize=bytesize_map.get(bytesize, serial.SEVENBITS),
                 parity=parity_map.get(parity, serial.PARITY_EVEN),
                 stopbits=stopbits_map.get(stopbits, serial.STOPBITS_ONE),
                 timeout=timeout

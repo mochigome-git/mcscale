@@ -18,7 +18,6 @@ import sys
 import re
 import queue
 import pymcprotocol
-import serial
 import utility
 
 # Configure logging to include date and time
@@ -59,106 +58,69 @@ def initialize_connection(plc_ip, plc_port, retries=5, delay=2):
 def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
     """Process incoming serial data."""
     buffer = b""  # Buffer for binary data
+    bit_active = False  # Track if the bit is currently active
+    last_activation_time = 0  # Time of the last activation
+
     while not stop_event.is_set():
-        try:
-            if ser.in_waiting > 0:
-                data = ser.read(ser.in_waiting)
-                buffer += data  # Append new data to the buffer
-
-                # Try to decode the buffer to ASCII (don't clear it yet)
-                try:
-                    decoded_data = buffer.decode('ascii')
-                    
-                    # Check if we have a complete message (ends with \r\n or a full valid format)
-                    if '\r\n' in decoded_data:
-                        # Split the data by lines (if multiple messages are received)
-                        messages = decoded_data.splitlines()
-
-                        for message in messages:
-                            # Clean up the message
-                            cleaned_data = message.strip()
-
-                            # Validate the data format
-                            match = re.match(r'^ST,\+(\d{6}\.\d)\s*g$', cleaned_data)
-                            if match:
-                                weight_str = match.group(1)
-                                try:
-                                    weight_value = float(weight_str)  # Convert to float
-                                    target_value = int(weight_value * 10)  # Convert to int & multiply by 10
-                                    logger.info("Received weight data from %s : %s", ser.port, decoded_data)
-
-                                    # Convert target_value to 32-bit format and split into 16-bit words
-                                    converted_values = utility.split_32bit_to_16bit(target_value)
-
-                                    # Write the split 16-bit values to the PLC
-                                    pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
-
-                                    # Write to the specified bit unit and wait for a specified time
-                                    pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
-                                    wait_with_check(stop_event, ser, 11, buffer)  # Pass buffer to process during wait
-
-                                    pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
-
-                                except ValueError:
-                                    logger.error("Failed to convert weight data to float: %s", weight_str)
-                            else:
-                                logger.error("Invalid weight data format: %s", cleaned_data)
-                        
-                        # Clear the buffer only if the full message was processed successfully
-                        buffer = b""  # Clear buffer after processing
-
-                except UnicodeDecodeError:
-                    logger.error("Could not decode data: %s", buffer.hex())
-
-        except serial.SerialException as e:
-            logger.error("Serial error on %s: %s", ser.port, e)
-            break  # Optionally reconnect or retry
-
-        except Exception as e:
-            logger.error("Error while reading from serial port %s: %s", ser.port, e)
-        
-        time.sleep(0.1)  # Reduce CPU usage when no data is available
-
-def wait_with_check(stop_event, ser, timeout, buffer):
-    """Wait for a specified time or until data arrives or stop event is set."""
-    total_sleep_time = 0
-    while total_sleep_time < timeout:
-        if stop_event.is_set():
-            break  # Exit if stop event is triggered
-
         if ser.in_waiting > 0:
             data = ser.read(ser.in_waiting)
-            buffer += data  # Continue accumulating data
+            buffer += data
 
-            # Decode the incoming data
             try:
-                decoded_data = buffer.decode('ascii').strip()
-                logger.info("Received weight data during wait: %s", decoded_data)
+                decoded_data = buffer.decode('ascii')
+            except UnicodeDecodeError:
+                logger.error("Could not decode data: %s", buffer.hex())
+                buffer = b""  # Clear buffer on decode error
+                continue  
 
-                # Validate the data format
-                match = re.match(r'^ST,\+(\d{6}\.\d)\s*g$', decoded_data)
-                if match:
-                    weight_str = match.group(1)
+            messages = decoded_data.split('\r\n')  # Split messages by line endings
+            for message in messages:
+                cleaned_data = message.strip()
+
+                ##if cleaned_data and re.match(r'^ST,\+(\d{6}\.\d)\s*g$', cleaned_data):
+                ##    weight_str = re.match(r'^ST,\+(\d{6}\.\d)\s*g$', cleaned_data).group(1)
+                ##    print("weight_str1", weight_str)
+                if cleaned_data and re.match(r'^ST,\+(\d+\.\d+)\s+g$', cleaned_data):
+                    weight_str = re.match(r'^ST,\+(\d+\.\d+)\s+g$', cleaned_data).group(1)
+
                     try:
                         weight_value = float(weight_str)
-                        target_value = int(weight_value * 10)
+                        target_value = int(weight_value * 100)
+                        logger.info("Received weight data from %s: %s", ser.port, cleaned_data)
 
-                        # Handle target value (e.g., write to PLC)
+                        # Write the split 16-bit values to the PLC
                         converted_values = utility.split_32bit_to_16bit(target_value)
-                        pymc3e.batchwrite_wordunits(headdevice="some_device", values=converted_values)
-                        logger.info("Processed weight during wait: %s", target_value)
+                        ## print(target_value)
+                        ## print(converted_values)
+                        pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
+
+                        # Activate bit unit if not already active
+                        if not bit_active:
+                            pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
+                            bit_active = True  # Mark the bit as active
+                            logger.info("Bit unit activated")
+                        
+                        # Reset the last activation time for each signal received
+                        last_activation_time = time.time()
+                        logger.info("Last activation time reset")
+
                     except ValueError:
                         logger.error("Failed to convert weight data to float: %s", weight_str)
-                else:
-                    logger.error("Invalid weight data format during wait: %s", decoded_data)
 
-            except UnicodeDecodeError:
-                logger.error("Could not decode data during wait: %s", buffer.hex())
+            buffer = b""  # Reset buffer
 
-            buffer = b""  # Clear the buffer after processing
+        # Check if the bit should be set to false (0) after 10 seconds from the last activation
+        current_time = time.time()
+        if bit_active and (current_time - last_activation_time) >= 10:
+            try:
+                pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
+                bit_active = False  # Reset the bit status
+                logger.info("Bit unit set to 0 after 10 seconds from last signal")
+            except pymc3e.mcprotocolerror.MCProtocolError as e:
+                logger.error("Failed to set bit to 0: %s", e)
 
-        time.sleep(0.5)
-        total_sleep_time += 0.5
+        time.sleep(0.1)  # Reduce CPU usage when no data is available
+
 
 def main(pymc3e):
     """Main function to run the PLC connection and data processing."""
@@ -169,13 +131,13 @@ def main(pymc3e):
     def worker():
         while not stop_event.is_set():
             try:
-                ser, headdevice, bitunit = data_queue.get(timeout=1)  # Block until there's data or timeout
+                ser, headdevice, bitunit = data_queue.get(timeout=2)  # Block until there's data or timeout
                 process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
             except queue.Empty:
                 continue  # Continue if the queue is empty
 
     # Start a pool of worker threads
-    num_worker_threads = 6  # Adjust based on your needs
+    num_worker_threads = 10  # Adjust based on your needs
     threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
     for thread in threads:
         thread.start()
@@ -193,8 +155,9 @@ def main(pymc3e):
 
             time.sleep(0.1)  # Reduce CPU usage in the main loop
 
-    except KeyboardInterrupt:
-        logger.info("Terminating program.")
+    except Exception as e:
+        logger.critical("Terminating program: %s", e)
+        sys.exit(1)
     finally:
         stop_event.set()  # Signal worker threads to stop
         for thread in threads:
@@ -205,6 +168,7 @@ def main(pymc3e):
         logger.info("All serial connections closed.")
         pymc3e.close()
         logger.info("PLC connection closed.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     PLC_IP = "192.168.3.61"
