@@ -1,7 +1,7 @@
 import serial
 import logging 
 
-def initialize_serial_connections(serial_ports, baudrate=2400, bytesize='SEVENBITS', parity='EVEN', stopbits='ONE', timeout=1):
+def initialize_serial_connections(serial_ports, baudrate=19200, bytesize='SEVENBITS', parity='EVEN', stopbits='ONE', timeout=1):
     """
     Initializes serial connections for all ports in the serial_ports dictionary.
 

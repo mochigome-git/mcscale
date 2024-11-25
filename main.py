@@ -10,7 +10,7 @@ Modules:
 - pymcprotocol: For communication with PLC devices using the MC Protocol 3E.
 - utility: Custom utility functions for data handling.
 """
-
+import subprocess
 import threading
 import time
 import logging
@@ -49,12 +49,54 @@ def initialize_connection(plc_ip, plc_port, retries=5, delay=2):
     for attempt in range(retries):
         try:
             pymc3e.connect(plc_ip, plc_port)
+            logger.info("Connected to PLC successfully.")
             return pymc3e
         except TimeoutError:
             logger.error("Connection attempt %d failed. Retrying in %d seconds...", attempt + 1, delay)
             time.sleep(delay)
     raise ConnectionError("Failed to connect to PLC after multiple attempts.")
 
+def ping_host(host):
+    """Ping the PLC to check if it is reachable."""
+    try:
+        # Specify the full path to the ping command
+        ping_path = "/bin/ping"  # Change this path if necessary based on your system
+        response = subprocess.run([ping_path, "-c", "1", host], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        if response.returncode == 0:
+            return True
+        else:
+            logger.error("Ping failed to %s. Response: %s", host, response.stderr.decode())
+            return False
+    except Exception as e:
+        logger.error("Error while pinging the host: %s", e)
+        return False
+        
+def check_connection(pymc3e, plc_ip, plc_port, retry_attempts=3, retry_delay=5):
+    """Check if the PLC is still connected using ping."""
+    try:
+        # First, ping the PLC to check its availability
+        if ping_host(plc_ip):
+            return True        
+        else:
+            logger.error("PLC is not reachable via ping. IP: %s", plc_ip)
+            return False
+    except Exception as e:
+        logger.error("PLC connection lost: %s", e)
+        
+        # Attempt to reconnect if ping fails or if connection is lost
+        for attempt in range(retry_attempts):
+            logger.info("Attempting to reconnect to PLC...")
+            try:
+                pymc3e = initialize_connection(plc_ip, plc_port)  # Attempt to reconnect
+                return True
+            except ConnectionError:
+                logger.error("Reconnection attempt %d failed. Retrying in %d seconds...", attempt + 1, retry_delay)
+                time.sleep(retry_delay)
+
+        logger.critical("Failed to reconnect after %d attempts. Exiting...", retry_attempts)
+        sys.exit(1)  # Exit if reconnection fails after multiple attempts
+        
 def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
     """Process incoming serial data."""
     buffer = b""  # Buffer for binary data
@@ -111,7 +153,7 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
 
         # Check if the bit should be set to false (0) after 10 seconds from the last activation
         current_time = time.time()
-        if bit_active and (current_time - last_activation_time) >= 10:
+        if bit_active and (current_time - last_activation_time) >= 7:
             try:
                 pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
                 bit_active = False  # Reset the bit status
@@ -123,6 +165,8 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
 
 
 def main(pymc3e):
+    PLC_IP = "192.168.3.61"
+    PLC_PORT = 5014
     """Main function to run the PLC connection and data processing."""
     utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
     stop_event = threading.Event()
@@ -133,9 +177,11 @@ def main(pymc3e):
             try:
                 ser, headdevice, bitunit = data_queue.get(timeout=2)  # Block until there's data or timeout
                 process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
+
             except queue.Empty:
                 continue  # Continue if the queue is empty
-
+            except Exception:
+                sys.exit(1)
     # Start a pool of worker threads
     num_worker_threads = 10  # Adjust based on your needs
     threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
@@ -144,6 +190,10 @@ def main(pymc3e):
 
     try:
         while True:
+            if not check_connection(pymc3e, PLC_IP, PLC_PORT):
+                logger.critical("PLC connection lost. Exiting program.")
+                break  # Exit the loop if the connection is lost
+
             for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
                 ser = serial_ports[port]
                 if ser and ser.in_waiting > 0:  # Check for new data

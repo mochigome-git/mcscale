@@ -4,9 +4,16 @@ services:
     restart: always
     volumes:
       - .:/home/admin/mcscale
+      - ~/mcscale/python_cache:/python_cache
+      - ~/mcscale/apt_cache:/apt_cache
     working_dir: /home/admin/mcscale
-    command: bash -c "pip install pymcprotocol && pip install pyserial && python -u main.py"
+    command: bash -c "ls -l /apt_cache/*.deb && dpkg -i /apt_cache/*.deb && pip install --no-index --find-links=/python_cache pymcprotocol pyserial && python -u main.py"
+   # Command will download the package each time restart
+   #command: bash -c "apt-get update && apt-get install -y iputils-ping && pip install pymcprotocol && pip install pyserial && python -u main.py"
     devices:
       - "/dev/ttyUSB0:/dev/ttyUSB0"
       - "/dev/ttyUSB1:/dev/ttyUSB1"
       - "/dev/ttyUSB2:/dev/ttyUSB2"
+
+  # pip download pymcprotocol pyserial -d .
+  # apt-get download iputils-ping libcap2-bin -o Dir::Cache::archives=./
