@@ -149,7 +149,7 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                     except ValueError:
                         logger.error("Failed to convert weight data to float: %s", weight_str)
 
-            buffer = b""  # Reset buffer
+            buffer = b""  # Reset buf
 
         # Check if the bit should be set to false (0) after 10 seconds from the last activation
         current_time = time.time()
@@ -163,10 +163,67 @@ def process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
 
         time.sleep(0.1)  # Reduce CPU usage when no data is available
 
+def smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
+    """Process incoming streaming data from the weighing scale."""
+    buffer = b""  # Buffer for binary data
+    last_weight = 0  # Track the last largest weight
+    last_update_time = 0  # Time when the last weight update occurred
 
-def main(pymc3e):
-    PLC_IP = "192.168.3.61"
-    PLC_PORT = 5014
+    while not stop_event.is_set():
+        if ser.in_waiting > 0:
+            data = ser.read(ser.in_waiting)
+            buffer += data
+
+            try:
+                decoded_data = buffer.decode('ascii')
+            except UnicodeDecodeError:
+                logger.error("Could not decode data: %s", buffer.hex())
+                buffer = b""  # Clear buffer on decode error
+                continue  
+
+            messages = decoded_data.split('\r\n')  # Split messages by line endings
+            buffer = b""  # Reset buffer after splitting messages
+
+            for message in messages:
+                cleaned_data = message.strip()
+                if cleaned_data and re.match(r'^ST,\+(\d+\.\d+)\s+g$', cleaned_data):
+                    weight_str = re.match(r'^ST,\+(\d+\.\d+)\s+g$', cleaned_data).group(1)
+
+                    try:
+                        weight_value = float(weight_str)
+                        target_value = int(weight_value * 100)
+
+                        if target_value > last_weight:
+                            # Update last_weight and write to PLC
+                            last_weight = target_value
+                            logger.info("Received weight data from %s: %s", ser.port, cleaned_data)
+                            converted_values = utility.split_32bit_to_16bit(last_weight)
+                            pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
+
+                            # Activate the bit unit
+                            pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
+                            last_update_time = time.time()  # Reset the update time
+                            logger.info("Updated PLC with weight: %d and activated bit unit.", last_weight)
+
+                    except ValueError:
+                        logger.error("Failed to convert weight data to float: %s", weight_str)
+
+        # Check if the 10-second timeout has elapsed without a larger weight
+        current_time = time.time()
+        if last_update_time and (current_time - last_update_time) >= 10:
+            try:
+                # Reset the PLC data and bit unit
+                pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
+                pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
+                last_update_time = 0  # Reset the update time
+                logger.info("Reset PLC data and bit unit due to timeout.")
+            except pymc3e.mcprotocolerror.MCProtocolError as e:
+                logger.error("Failed to reset PLC data: %s", e)
+
+        time.sleep(0.1)  # Reduce CPU usage when no data is available
+
+
+def main(pymc3e, PLC_IP, PLC_PORT):
     """Main function to run the PLC connection and data processing."""
     utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
     stop_event = threading.Event()
@@ -176,7 +233,7 @@ def main(pymc3e):
         while not stop_event.is_set():
             try:
                 ser, headdevice, bitunit = data_queue.get(timeout=2)  # Block until there's data or timeout
-                process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
+                smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
 
             except queue.Empty:
                 continue  # Continue if the queue is empty
@@ -224,4 +281,4 @@ if __name__ == "__main__":
     PLC_IP = "192.168.3.61"
     PLC_PORT = 5014
     pymc3e = initialize_connection(PLC_IP, PLC_PORT)
-    main(pymc3e)
+    main(pymc3e,PLC_IP, PLC_PORT)
