@@ -193,6 +193,11 @@ def smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                         weight_value = float(weight_str)
                         target_value = int(weight_value * 100)
 
+                        # Filter out weights lower than 100
+                        if target_value < 100:
+                            # logger.info("Filtered out weight data: %d (less than threshold).", target_value)
+                            continue
+
                         if target_value > last_weight:
                             # Update last_weight and write to PLC
                             last_weight = target_value
@@ -208,15 +213,16 @@ def smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                     except ValueError:
                         logger.error("Failed to convert weight data to float: %s", weight_str)
 
-        # Check if the 10-second timeout has elapsed without a larger weight
+        # Check if the 30-second timeout has elapsed without a larger weight
         current_time = time.time()
-        if last_update_time and (current_time - last_update_time) >= 10:
+        if last_update_time and (current_time - last_update_time) >= 30:
             try:
                 # Reset the PLC data and bit unit
                 pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
                 pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
                 last_update_time = 0  # Reset the update time
                 logger.info("Reset PLC data and bit unit due to timeout.")
+                last_weight = 0 # Reset last weight
             except pymc3e.mcprotocolerror.MCProtocolError as e:
                 logger.error("Failed to reset PLC data: %s", e)
 
