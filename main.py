@@ -213,9 +213,9 @@ def smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
                     except ValueError:
                         logger.error("Failed to convert weight data to float: %s", weight_str)
 
-        # Check if the 30-second timeout has elapsed without a larger weight
+        # Check if the 20-second timeout has elapsed without a larger weight
         current_time = time.time()
-        if last_update_time and (current_time - last_update_time) >= 30:
+        if last_update_time and (current_time - last_update_time) >= 10:
             try:
                 # Reset the PLC data and bit unit
                 pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
