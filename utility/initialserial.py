@@ -106,7 +106,7 @@ def send_ping_token(ser, max_retries=3):
             
             # Check if the response contains any data (non-empty response)
             if response.strip():  # strip() removes any leading/trailing whitespace or newline
-                #logging.info("Valid response from %s: %s", ser.name, response.decode('utf-8'))
+                # logging.info("Valid response from %s: %s", ser.name, response.decode('utf-8'))
                 return True
             
             # Log if the response is empty

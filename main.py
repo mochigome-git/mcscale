@@ -20,7 +20,6 @@ import connect
 import utility
 import process
 
-
 # Configure logging to include date and time
 logging.basicConfig(
     stream=sys.stdout,
@@ -49,13 +48,17 @@ def main(pymc3e, PLC_IP, PLC_PORT):
     """Main function to run the PLC connection and data processing."""
     utility.initialize_serial_connections(serial_ports)
     stop_event = threading.Event()
+    pause_event = threading.Event()  # Event to pause the serial monitor
     data_queue = queue.Queue()  # Create a queue for incoming data processing
 
     def worker():
         while not stop_event.is_set():
             try:
-                ser, headdevice, bitunit = data_queue.get(timeout=2)  # Block until there's data or timeout
+                ser, headdevice, bitunit = data_queue.get(timeout=1)  # Block until there's data or timeout
                 process.smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event, logger)
+
+                # After processing, resume the serial port monitoring
+                pause_event.set()  # Resume monitoring
 
             except queue.Empty:
                 continue  # Continue if the queue is empty
@@ -63,16 +66,27 @@ def main(pymc3e, PLC_IP, PLC_PORT):
                 sys.exit(1)
 
     # Start a pool of worker threads
-    num_worker_threads = 10  
+    num_worker_threads = 10
     threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
     for thread in threads:
         thread.start()
 
     # Start serial port monitor thread
-    monitor_thread = threading.Thread(
-        target=utility.monitor_serial_ports,
-        args=(serial_ports, stop_event)  # Ensure this is a tuple
-    )
+    def monitor():
+        while not stop_event.is_set():
+            if not pause_event.is_set():  # Monitor will only run if not paused
+                # Monitor serial ports for incoming data
+                for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
+                    ser = serial_ports[port]
+                    if ser and ser.in_waiting > 0:  # Check for new data
+                        if stop_event.is_set():
+                            stop_event.clear()
+
+                        # Add serial data processing task to the queue
+                        data_queue.put((ser, headdevice, bitunit))
+            time.sleep(0.1)  # Reduce CPU usage in the monitor thread
+
+    monitor_thread = threading.Thread(target=monitor)
     monitor_thread.start()
 
     try:
@@ -80,15 +94,6 @@ def main(pymc3e, PLC_IP, PLC_PORT):
             if not connect.check_connection(pymc3e, PLC_IP, PLC_PORT, logger):
                 logger.critical("PLC connection lost. Exiting program.")
                 break  # Exit the loop if the connection is lost
-
-            for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
-                ser = serial_ports[port]
-                if ser and ser.in_waiting > 0:  # Check for new data
-                    if stop_event.is_set():
-                        stop_event.clear()
-
-                    # Add serial data processing task to the queue
-                    data_queue.put((ser, headdevice, bitunit))
 
             time.sleep(0.1)  # Reduce CPU usage in the main loop
 
@@ -111,4 +116,4 @@ if __name__ == "__main__":
     PLC_IP = "192.168.3.61"
     PLC_PORT = 5014
     pymc3e = connect.initialize_connection(PLC_IP, PLC_PORT, logger)
-    main(pymc3e,PLC_IP, PLC_PORT)
+    main(pymc3e, PLC_IP, PLC_PORT)
