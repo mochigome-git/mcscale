@@ -115,8 +115,8 @@ def send_ping_token(ser, max_retries=3):
         except Exception as e:
             logging.error("Failed to send PING token to %s: %s", ser.name, e)
         
-        retries += 2
-        time.sleep(60)  # Wait a bit before retrying
+        retries += 1
+        time.sleep(15)  # Wait a bit before retrying
     
     # If retries are exhausted and no valid response, return False
     return False
