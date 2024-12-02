@@ -231,7 +231,7 @@ def smode_process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event):
 
 def main(pymc3e, PLC_IP, PLC_PORT):
     """Main function to run the PLC connection and data processing."""
-    utility.initialize_serial_connections(serial_ports, bytesize='SEVENBITS')
+    utility.initialize_serial_connections(serial_ports)
     stop_event = threading.Event()
     data_queue = queue.Queue()  # Create a queue for incoming data processing
 
@@ -245,11 +245,19 @@ def main(pymc3e, PLC_IP, PLC_PORT):
                 continue  # Continue if the queue is empty
             except Exception:
                 sys.exit(1)
+
     # Start a pool of worker threads
-    num_worker_threads = 10  # Adjust based on your needs
+    num_worker_threads = 10  
     threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
     for thread in threads:
         thread.start()
+
+    # Start serial port monitor thread
+    monitor_thread = threading.Thread(
+        target=utility.monitor_serial_ports,
+        args=(serial_ports, stop_event)  # Ensure this is a tuple
+    )
+    monitor_thread.start()
 
     try:
         while True:
