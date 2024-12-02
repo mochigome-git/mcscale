@@ -77,11 +77,11 @@ def split_32bit_to_16bit(value):
 # 
 #D10からD15まで与えた数値を書き込み
 # Example usage:
-target_value = 2000
+target_value = 0
 converted_values = split_32bit_to_16bit(target_value)
 print(f"Converted values (32-bit split into 16-bit): {converted_values}")
 # Write the split 16-bit values to the PLC
-pymc3e.batchwrite_wordunits(headdevice="D6364", values=converted_values)
+pymc3e.batchwrite_wordunits(headdevice="D6564", values=converted_values)
 # 
 # #Y10からY15まで与えた数値を書き込み(ビットデバイスアクセス)
 # pymc3e.batchwrite_bitunits(headdevice="M3300", values=[1])

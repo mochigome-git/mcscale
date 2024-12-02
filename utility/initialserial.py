@@ -78,6 +78,49 @@ def initialize_serial_connections(serial_ports, baudrate=19200, bytesize='SEVENB
     
     return serial_ports
 
+def send_ping_token(ser, max_retries=3):
+    """
+    Sends a PING token to check if the device on the serial port is ready to receive data.
+    If the device responds with any content, it is treated as a valid response.
+    
+    Parameters
+    ----------
+    ser : serial.Serial
+        The serial object representing the port to be checked.
+    
+    max_retries : int
+        Maximum number of retries for the PING check if the device doesn't respond.
+    
+    Returns
+    -------
+    bool
+        True if the device responds with any content, False otherwise.
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            # Send a PING token (optional: depending on how your device is set up)
+            #ping_token = b'PING'  # PING token;
+            #ser.write(ping_token)
+            response = ser.readline()  # Read the response from the device
+            
+            # Check if the response contains any data (non-empty response)
+            if response.strip():  # strip() removes any leading/trailing whitespace or newline
+                #logging.info("Valid response from %s: %s", ser.name, response.decode('utf-8'))
+                return True
+            
+            # Log if the response is empty
+            #logging.warning("Empty response from %s", ser.name)
+        
+        except Exception as e:
+            logging.error("Failed to send PING token to %s: %s", ser.name, e)
+        
+        retries += 2
+        time.sleep(60)  # Wait a bit before retrying
+    
+    # If retries are exhausted and no valid response, return False
+    return False
+
 def monitor_serial_ports(serial_ports, stop_event=None):
     """
     Monitors the state of serial ports, ensuring they remain open and reconnects if a port is closed.
@@ -107,18 +150,28 @@ def monitor_serial_ports(serial_ports, stop_event=None):
                 except Exception as e:
                     # If reconnection fails, log the error and exit
                     logging.critical("Failed to reconnect serial port %s: %s. Exiting program.", port, e)
-                    sys.exit(1) 
-            else:
-                # Log that the port is healthy (open)
-                logging.debug("Serial port %s is open and healthy.", port)
-                
-            # Ensure that any issues are flagged by setting the flag to False if necessary
+                    sys.exit(1)
+            
+            # Check if the device on the port is ready using the PING token
+            if ser is not None and ser.is_open:
+                if send_ping_token(ser):
+                    logging.debug("Serial port %s is open, healthy, and responsive.", port)
+                else:
+                    logging.warning("Serial port %s is open, but the device is not responding to PING. Attempting to reconnect.", port)
+                    try:
+                        ser.close()
+                        ser.open()
+                        logging.info("Reconnected serial port %s after failed PING response.", port)
+                    except Exception as e:
+                        logging.critical("Failed to reconnect serial port %s after failed PING: %s. Exiting program.", port, e)
+                        sys.exit(1)  # Exit if PING fails and reconnection is unsuccessful
+                        
+            # Flag if any port is not healthy
             if ser is None or not ser.is_open:
                 all_ports_open = False
         
-        # If all ports are open and healthy, print a success message
+        # If all ports are open and healthy, print a success message (optional)
         if all_ports_open:
-            #logging.info("All serial ports are open and functioning correctly.")
+            #logging.info("All serial ports are open, healthy, and responsive.")
             continue
-        
-        time.sleep(1)  
+        time.sleep(1)  # Check status periodically
