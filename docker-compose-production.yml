@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  mcscale:
+    build: .
+    image: msscale:1.0v
+    restart: always
+    volumes:
+      - .:/home/admin/mcscale
+    working_dir: /home/admin/mcscale
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+      - "/dev/ttyUSB1:/dev/ttyUSB1"
+      - "/dev/ttyUSB2:/dev/ttyUSB2"
