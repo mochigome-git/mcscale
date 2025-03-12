@@ -84,6 +84,7 @@ def main(pymc3e, PLC_IP, PLC_PORT):
                 continue  # Continue if the queue is empty
             except Exception as e:
                 logger.error("Worker encountered an unexpected error: %s", e)
+                sys.exit(1)
 
 
     # Start a pool of worker threads
@@ -130,6 +131,7 @@ def main(pymc3e, PLC_IP, PLC_PORT):
         logger.info("Keyboard interrupt received. Shutting down gracefully...")
     except Exception as e:
         logger.critical("Terminating program due to unexpected error: %s", e)
+        sys.exit(1)
     finally:
         stop_event.set()  # Signal worker threads to stop
         monitor_thread.join()  # Wait for the monitor thread to finish

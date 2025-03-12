@@ -203,7 +203,7 @@ def smode_process_serial_data(context):
                         logger.error("Failed to convert weight data to float: %s", weight_str)
 
         current_time = time.time()
-        if state["last_update_time"] and (current_time - state["last_update_time"]) >= 10:
+        if state["last_update_time"] and (current_time - state["last_update_time"]) >= 15:
             try:
                 pymc3e.batchwrite_wordunits(headdevice=headdevice, values=[0, 0])
                 pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[0])
