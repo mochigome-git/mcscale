@@ -8,7 +8,7 @@ WORKDIR /home/admin/mcscale
 RUN apt-get update && apt-get install -y iputils-ping
 
 # Install required Python packages
-RUN pip install pymcprotocol pyserial
+RUN pip install --no-cache-dir pymcprotocol pyserial python-dotenv
 
 # Copy the current directory contents into the container's working directory
 COPY . /home/admin/mcscale

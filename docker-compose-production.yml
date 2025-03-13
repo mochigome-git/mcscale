@@ -8,6 +8,8 @@ services:
     volumes:
       - .:/home/admin/mcscale
     working_dir: /home/admin/mcscale
+    env_file:
+      - .env
     devices:
       - "/dev/ttyUSB0:/dev/ttyUSB0"
       - "/dev/ttyUSB1:/dev/ttyUSB1"

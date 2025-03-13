@@ -16,16 +16,21 @@ import time
 import logging
 import sys
 import queue
+import socket
+import os
 import connect
 import utility
 import process
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configure logging to include date and time
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,  # Set the logging level to INFO or higher
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Include timestamp, log level, and message
-    datefmt='%Y-%m-%d %H:%M:%S'  # Specify date and time format
+    format='%(asctime)s - %(levelname)s - %(message)s',  
+    datefmt='%Y-%m-%d %H:%M:%S' 
 )
 logger = logging.getLogger(__name__)
 
@@ -64,27 +69,26 @@ def main(pymc3e, PLC_IP, PLC_PORT):
     def worker():
         while not stop_event.is_set():
             try:
-                ser, headdevice, bitunit, states = data_queue.get(timeout=1)  # Block until there's data or timeout
-                
-                # Prepare the context dictionary with all necessary data
+                ser, headdevice, bitunit, states = data_queue.get(timeout=1)
                 context = {
                     "ser": ser,
                     "headdevice": headdevice,
                     "bitunit": bitunit,
                     "pymc3e": pymc3e,
                     "logger": logger,
-                    "state": states,  # State specific to this port
-                    "stop_event": stop_event  # Pass the stop_event here
+                    "state": states,
+                    "stop_event": stop_event
                 }
-
-                # Pass the context to the processing function
                 process.smode_process_serial_data(context)
                 data_queue.task_done()
+
             except queue.Empty:
-                continue  # Continue if the queue is empty
-            except Exception as e:
+                continue  # No data to process, continue loop
+            
+            except (ValueError, socket.error) as e:
                 logger.error("Worker encountered an unexpected error: %s", e)
-                sys.exit(1)
+                stop_event.set()  # Signal all threads to stop
+                break
 
 
     # Start a pool of worker threads
@@ -96,15 +100,19 @@ def main(pymc3e, PLC_IP, PLC_PORT):
     # Monitor function (producer)
     def monitor():
         while not stop_event.is_set():
-            for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
-                ser = serial_ports[port]
-                if ser and ser.is_open and ser.in_waiting > 0:  # Check for new data
-                    try:
-                        # Enqueue serial port data for processing
+            try:
+                for port, (headdevice, bitunit) in port_to_headdevice_and_bitunit.items():
+                    ser = serial_ports[port]
+                    if ser and ser.is_open and ser.in_waiting > 0:
                         data_queue.put((ser, headdevice, bitunit, states[port]))
-                    except queue.Full:
-                        logger.warning("Data queue is full. Dropping new data.")
-            time.sleep(0.1)  # Reduce CPU usage in the monitor thread
+
+                time.sleep(0.1)
+
+            except (ValueError, socket.error) as e:
+                logger.error("Monitor encountered an error: %s", e)
+                stop_event.set()  # Trigger shutdown if the monitor fails critically
+                break
+
 
     # Uncomment to use utility.monitor_serial_ports to check the heathly status
     # def monitor():
@@ -118,35 +126,55 @@ def main(pymc3e, PLC_IP, PLC_PORT):
     monitor_thread = threading.Thread(target=monitor, daemon=True)
     monitor_thread.start()
 
+     # Main loop: Check PLC connection
     try:
-        # Main loop: Check PLC connection
-        while True:
+        while not stop_event.is_set():
             if not connect.check_connection(pymc3e, PLC_IP, PLC_PORT, logger):
-                logger.critical("PLC connection lost. Exiting program.")
-                break  # Exit the loop if the connection is lost
+                logger.critical("PLC connection lost. Initiating shutdown...")
+                stop_event.set()
+                break
 
-            time.sleep(0.1)  # Reduce CPU usage in the main loop
+            time.sleep(0.1)
 
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received. Shutting down gracefully...")
-    except Exception as e:
-        logger.critical("Terminating program due to unexpected error: %s", e)
-        sys.exit(1)
+        stop_event.set()
+
+    except (ValueError, socket.error) as e:
+        logger.critical("Specific error occurred: %s", e)
+        stop_event.set()
+
     finally:
-        stop_event.set()  # Signal worker threads to stop
-        monitor_thread.join()  # Wait for the monitor thread to finish
+        # Ensure all threads shut down gracefully
+        monitor_thread.join()
         for thread in threads:
-            thread.join()  # Wait for all worker threads to finish
+            thread.join()
+
+        # Close serial ports
         for ser in serial_ports.values():
             if ser is not None:
                 ser.close()
         logger.info("All serial connections closed.")
+
+        # Close PLC connection
         pymc3e.close()
         logger.info("PLC connection closed.")
+        
         sys.exit(0)
 
 if __name__ == "__main__":
-    PLC_IP = "192.168.3.61"
-    PLC_PORT = 5014
-    pymc3e = connect.initialize_connection(PLC_IP, PLC_PORT, logger)
-    main(pymc3e, PLC_IP, PLC_PORT)
+    try:
+        PLC_IP = os.getenv("PLC_IP")
+        PLC_PORT = int(os.getenv("PLC_PORT"))
+
+        # Validate environment variables
+        if not PLC_IP or not PLC_PORT:
+            logger.critical("PLC_IP or PLC_PORT is not set correctly in the .env file.")
+            sys.exit(1)
+
+        pymc3e = connect.initialize_connection(PLC_IP, PLC_PORT, logger)
+        main(pymc3e, PLC_IP, PLC_PORT)
+
+    except (ValueError, socket.error) as e:
+        logger.critical("Program failed to start due to: %s", e)
+        sys.exit(1)

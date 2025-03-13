@@ -22,6 +22,7 @@ pip install pyserial
 #### 2. Install pymcprotocol: For installing pymcprotocol, use the following command to break system package constraints:
 ```bash
 sudo pip install --break-system-packages pymcprotocol
+sudo pip install --break-system-packages python-dotenv
 ```
 #### 3. Check if FTDI Driver is Already Installed
 
