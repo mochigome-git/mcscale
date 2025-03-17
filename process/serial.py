@@ -31,6 +31,7 @@ import os
 import socket
 import re
 import utility
+import threading
 
 
 def process_weight_data(
@@ -76,6 +77,7 @@ def process_weight_data(
         target_value = int(weight_value * 100)
         initial_delay = 0.5
         delay_increment = 0.5
+        delay = 0.3
 
         # Ignore invalid weights early
         if target_value < 100:
@@ -93,11 +95,19 @@ def process_weight_data(
         # Perform write with retries
         for attempt in range(max_retries):
             converted_values = utility.split_32bit_to_16bit(target_value)
-
             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
+            threading.Timer(
+                delay, pymc3e.batchwrite_wordunits, args=(headdevice, converted_values)
+            ).start()
+            threading.Timer(
+                delay * 2,
+                pymc3e.batchwrite_wordunits,
+                args=(headdevice, converted_values),
+            ).start()
+
             read_back = pymc3e.batchread_wordunits(headdevice=headdevice, readsize=1)
-            print(read_back)
             if read_back and int(read_back[0]) == target_value:
+                read_back = []
                 break
             logger.warning(
                 "Retry %d: Failed to write weight data to PLC: %d (Sent: %s, Received: %s)",
