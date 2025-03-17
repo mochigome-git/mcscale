@@ -1,1 +1,1 @@
-from .serial import smode_process_serial_data, process_serial_data
+from .serial import smode_process_serial_data

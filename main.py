@@ -21,9 +21,6 @@ import os
 import connect
 import utility
 import process
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Configure logging to include date and time
 logging.basicConfig(
