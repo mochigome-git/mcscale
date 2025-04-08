@@ -9,6 +9,6 @@ services:
     env_file:
       - .env
     devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
-      - "/dev/ttyUSB1:/dev/ttyUSB1"
-      - "/dev/ttyUSB2:/dev/ttyUSB2"
+      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002TCY0-if00-port0:/dev/ttyUSB0"
+      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002T0XP-if00-port0:/dev/ttyUSB1"
+      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002T0PJ-if00-port0:/dev/ttyUSB2"

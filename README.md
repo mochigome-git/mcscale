@@ -52,6 +52,18 @@ sudo pip install --break-system-packages python-dotenv
     ls /dev/ttyUSB*
     ```
 
+#### 4. Bind the USB port with id
+
+1. **Check the serial id (run this command on the host machine)**
+    ```bash
+     ls -l /dev/serial/by-id/
+    ```
+
+2. **Once you get the correct by-id path, use it in your docker-compose.yml like this:**
+    ```bash
+    devices:
+    - "/dev/serial/by-id/usb-FTDI_USB_Serial_ABC123-if00-port0:/dev/ttyUSB0"
+    ```
 
 ## Usage
 1. Set up your serial ports in the ```serial_ports``` dictionary.
