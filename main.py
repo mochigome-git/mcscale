@@ -34,13 +34,19 @@ logger = logging.getLogger(__name__)
 # Set up serial communication
 serial_ports = {"/dev/ttyUSB0": None, "/dev/ttyUSB1": None, "/dev/ttyUSB2": None}
 
-# Mapping of serial ports to PLC head devices and bit units
-port_to_headdevice_and_bitunit = {
-    "/dev/ttyUSB0": ("D6364", "M3300"),
-    "/dev/ttyUSB1": ("D6464", "M3400"),
-    "/dev/ttyUSB2": ("D6564", "M3500"),
-}
+# Get the SERIAL_PORTS mapping from the .env file
+serial_ports_mapping = os.getenv("SERIAL_PORTS")
 
+# Convert the serialized string into a dictionary
+port_to_headdevice_and_bitunit = {}
+
+if serial_ports_mapping:
+    port_entries = serial_ports_mapping.split(';')
+    for entry in port_entries:
+        port, headdevice_bitunit = entry.split(':')
+        headdevice, bitunit = headdevice_bitunit.split(',')
+        # Clean whitespace just in case
+        port_to_headdevice_and_bitunit[port.strip()] = (headdevice.strip(), bitunit.strip())
 
 def main(pymc3e, PLC_IP, PLC_PORT):
     """Main function to run the PLC connection and data processing."""
@@ -81,6 +87,7 @@ def main(pymc3e, PLC_IP, PLC_PORT):
             except (ValueError, socket.error) as e:
                 logger.error("Worker encountered an unexpected error: %s", e)
                 stop_event.set()  # Signal all threads to stop
+                time.sleep(0.5)
                 break
 
     # Start a pool of worker threads
@@ -148,14 +155,23 @@ def main(pymc3e, PLC_IP, PLC_PORT):
 
         # Close serial ports
         for ser in serial_ports.values():
-            if ser is not None:
-                ser.close()
+            if ser is not None and ser.is_open:
+                try:
+                    ser.flush()
+                    ser.close()
+                except Exception as e:
+                    logger.warning(f"Error closing serial port: {e}")
+
         logger.info("All serial connections closed.")
 
         # Close PLC connection
-        pymc3e.close()
-        logger.info("PLC connection closed.")
-        sys.exit(0)
+        if pymc3e:
+            try:
+                pymc3e.close()
+                logger.info("PLC connection closed.")
+            except Exception as e:
+                logger.warning("Error while closing PLC connection: %s", e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -163,14 +179,17 @@ if __name__ == "__main__":
         PLC_IP = os.getenv("PLC_IP")
         PLC_PORT = int(os.getenv("PLC_PORT"))
 
-        # Validate environment variables
         if not PLC_IP or not PLC_PORT:
             logger.critical("PLC_IP or PLC_PORT is not set correctly in the .env file.")
             sys.exit(1)
 
         pymc3e = connect.initialize_connection(PLC_IP, PLC_PORT, logger)
-        main(pymc3e, PLC_IP, PLC_PORT)
+    except Exception as e:
+        logger.critical("Startup failed: %s", e)
+        sys.exit(1)
 
-    except (ValueError, socket.error) as e:
-        logger.critical("Program failed to start due to: %s", e)
+    try:
+        main(pymc3e, PLC_IP, PLC_PORT)
+    except Exception as e:
+        logger.critical("Main process terminated due to: %s", e)
         sys.exit(1)

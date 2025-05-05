@@ -1,7 +1,7 @@
 services:
   mcscale:
-    build: .
-    image: msscale:1.0v
+    #  build: .
+    image: mochigome/mcscale:1.0v
     restart: always
     volumes:
       - .:/home/admin/mcscale
@@ -9,6 +9,8 @@ services:
     env_file:
       - .env
     devices:
-      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002TCY0-if00-port0:/dev/ttyUSB0"
-      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002T0XP-if00-port0:/dev/ttyUSB1"
-      - "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B002T0PJ-if00-port0:/dev/ttyUSB2"
+      - "${USB0}:/dev/ttyUSB0"
+      - "${USB1}:/dev/ttyUSB1"
+      - "${USB2}:/dev/ttyUSB2"
+
+# docker compose -f docker-compose-production.yml logs -f

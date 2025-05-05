@@ -73,4 +73,5 @@ def check_connection(pymc3e, plc_ip, plc_port, logger, retry_attempts=3, retry_d
         logger.critical(
             "Failed to reconnect after %d attempts. Exiting...", retry_attempts
         )
-        sys.exit(1)  # Exit if reconnection fails after multiple attempts
+        raise ConnectionError("PLC not reachable after retries.")
+
