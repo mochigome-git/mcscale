@@ -15,3 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 CMD ["python", "-u", "main.py"]
+
+# docker build --tag mcscale:1.0v .
+# docker tag mcscale:1.0v mochigome/mcscale:1.0v
+# docker push mochigome/mcscale:1.0v
