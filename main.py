@@ -35,18 +35,21 @@ logger = logging.getLogger(__name__)
 serial_ports = {"/dev/ttyUSB0": None, "/dev/ttyUSB1": None, "/dev/ttyUSB2": None}
 
 # Get the SERIAL_PORTS mapping from the .env file
-serial_ports_mapping = os.getenv("SERIAL_PORTS")
-
-# Convert the serialized string into a dictionary
+serial_ports_config = os.getenv("SERIAL_PORTS", "")
 port_to_headdevice_and_bitunit = {}
 
-if serial_ports_mapping:
-    port_entries = serial_ports_mapping.split(';')
-    for entry in port_entries:
-        port, headdevice_bitunit = entry.split(':')
-        headdevice, bitunit = headdevice_bitunit.split(',')
-        # Clean whitespace just in case
-        port_to_headdevice_and_bitunit[port.strip()] = (headdevice.strip(), bitunit.strip())
+for entry in serial_ports_config.split(";"):
+    if not entry.strip():
+        continue
+
+    # Split by first colon
+    port, devices = entry.strip().split(":", 1)
+    headdevice, bitunit = devices.split(",")
+
+    # Remove leading slash from headdevice only
+    headdevice = headdevice.lstrip("/") 
+
+    port_to_headdevice_and_bitunit[port] = (headdevice, bitunit)
 
 def main(pymc3e, PLC_IP, PLC_PORT):
     """Main function to run the PLC connection and data processing."""

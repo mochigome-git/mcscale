@@ -19,7 +19,7 @@ import main
 @pytest.fixture(scope="module", autouse=True)
 def mock_pymcprotocol_fixture():
     """Mock the pymcprotocol library's connection and methods."""
-    with mock.patch("main.initialize_connection") as MockInitializeConnection:
+    with mock.patch("main.utility.initialize_connection") as MockInitializeConnection:
         # Create a mock instance of pymcprotocol.Type3E
         mock_pymc3e_instance = mock.MagicMock(spec=pymcprotocol.Type3E)
         
@@ -30,6 +30,7 @@ def mock_pymcprotocol_fixture():
         
         # Yield the mock instance for use in tests
         yield mock_pymc3e_instance
+
 
 @pytest.fixture
 def pymc3e_fixture(mock_pymcprotocol_fixture):
