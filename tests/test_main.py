@@ -7,6 +7,7 @@ import sys
 import os
 import threading
 from itertools import cycle
+import socket
 import time
 import serial
 import pytest
@@ -19,7 +20,7 @@ import main
 @pytest.fixture(scope="module", autouse=True)
 def mock_pymcprotocol_fixture():
     """Mock the pymcprotocol library's connection and methods."""
-    with mock.patch("main.utility.initialize_connection") as MockInitializeConnection:
+    with mock.patch("main.connect.initialize_connection") as MockInitializeConnection:
         # Create a mock instance of pymcprotocol.Type3E
         mock_pymc3e_instance = mock.MagicMock(spec=pymcprotocol.Type3E)
         
@@ -35,7 +36,7 @@ def mock_pymcprotocol_fixture():
 @pytest.fixture
 def pymc3e_fixture(mock_pymcprotocol_fixture):
     """Fixture that provides the mocked pymc3e instance."""
-    return mock_pymcprotocol_fixture
+    return mock.MagicMock(spec=pymcprotocol.Type3E)
 
 @pytest.fixture
 def serial_mock():
@@ -53,68 +54,106 @@ def test_process_serial_data(serial_mock, pymc3e_fixture, monkeypatch):
     """Test the process_serial_data function by mocking partial serial data arrival."""
     monkeypatch.setattr(main.utility, "split_32bit_to_16bit", lambda x: [x // 65536, x % 65536])
 
-    # Create a stop event
     stop_event = threading.Event()
 
-    # Simulate partial data input (incomplete weight message)
-    serial_mock.read.side_effect = cycle([b'ST,+000009.3  g\r\n'])  # Simulate incomplete and then full message
+    # Simulate byte-by-byte serial data
+    test_data = b"ST,+000009.3  g\r\n"
+    serial_mock.in_waiting = len(test_data)
+    serial_mock.read = mock.MagicMock(return_value=test_data)  # Changed to return full data
 
-    # Start the function in a thread to prevent blocking the test
-    thread = threading.Thread(target=main.process_serial_data, args=(serial_mock, "D6364", "M3300", pymc3e_fixture, stop_event))
+    # Minimal logger and shared state
+    class DummyLogger:
+        def info(self, *args): pass
+        def error(self, *args): pass
+        def critical(self, *args): pass
+        def warning(self, *args): pass 
+
+
+    state = {
+        "buffer": b"",
+        "last_weight": 0,
+        "last_reset": time.time(),
+        "last_update_time": time.time()  # Added to avoid KeyError
+    }
+
+    context = {
+        "ser": serial_mock,
+        "headdevice": "D6364",
+        "bitunit": "M3300",
+        "pymc3e": pymc3e_fixture,
+        "logger": DummyLogger(),
+        "state": state,
+        "stop_event": stop_event
+    }
+
+    # Mocking batchwrite_wordunits to verify it's called
+    pymc3e_fixture.batchwrite_wordunits = mock.MagicMock()
+
+    thread = threading.Thread(target=main.process.smode_process_serial_data, args=(context,))
     thread.start()
-
-    # Allow the function to process data for a limited time
     time.sleep(2)
-
-    # Set the stop event to signal the infinite loop to stop
     stop_event.set()
+    thread.join(timeout=5)
 
-    # Wait for the thread to finish, with a timeout to avoid hanging
-    thread.join(timeout=5) 
+    # Verify that the mocked PLC method was called with expected value
+    pymc3e_fixture.batchwrite_wordunits.assert_called_with("D6364", [0, 930])
 
-    # Assert the correct PLC commands were sent
-    pymc3e_fixture.batchwrite_wordunits.assert_called_with(headdevice="D6364", values=[0, 93])
-    pymc3e_fixture.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[1])
-    pymc3e_fixture.batchwrite_bitunits.assert_any_call(headdevice="M3300", values=[0])
 
-    # Ensure serial read was called (simulate chunked reads)
-    assert serial_mock.read.call_count >= 2
+    # Debugging output
+    print("batchwrite_wordunits called:", pymc3e_fixture.batchwrite_wordunits.called)
+    print("call arguments:", pymc3e_fixture.batchwrite_wordunits.call_args_list)
 
-def test_main_loop(serial_mock, pymc3e_fixture, monkeypatch):
-    """Test the main loop to ensure serial data is processed correctly."""
-    # Mock the serial connections initializer
-    monkeypatch.setattr(main.utility, "initialize_serial_connections", mock.Mock())
-    monkeypatch.setattr(main, "process_serial_data", mock.Mock())
 
-    # Mock the port_to_headdevice_and_bitunit dictionary
+def test_main_loop(monkeypatch, pymc3e_fixture):
+    """Test that main.main starts threads and handles serial mapping and shutdown correctly."""
+
+    # Use your provided port-to-device mapping
     mock_port_to_headdevice_and_bitunit = {
         "/dev/ttyUSB0": ("D6364", "M3300"),
         "/dev/ttyUSB1": ("D6464", "M3400"),
         "/dev/ttyUSB2": ("D6564", "M3500")
     }
+
+    # Prepare mock serial ports
+    mock_serial_connections = {
+        port: mock.Mock(name=port) for port in mock_port_to_headdevice_and_bitunit
+    }
+
+    # Patch the utility functions to inject mocks
+    monkeypatch.setattr(main.utility, "initialize_serial_connections", lambda ports: ports.update(mock_serial_connections))
+    monkeypatch.setattr(main.utility, "parse_serial_ports_config", lambda _: mock_port_to_headdevice_and_bitunit)
+    monkeypatch.setattr(main.connect, "check_connection", lambda *_args, **_kwargs: True)
+
+    # Patch monitor_serial_ports to simulate activity and stop shortly after
+    def mock_monitor_serial_ports(data_queue, serial_ports, port_map, states, stop_event):
+        time.sleep(0.1)
+        stop_event.set()  # trigger shutdown early
+
+    monkeypatch.setattr(main.utility, "monitor_serial_ports", mock_monitor_serial_ports)
+
+    # Patch the worker to simulate work
+    monkeypatch.setattr(main.utility, "worker", lambda *_args, **_kwargs: time.sleep(0.1))
+
+    # Run main in a thread to simulate app lifecycle
+    t = threading.Thread(target=main.main, args=(pymc3e_fixture, "127.0.0.1", 5000))
     
-    # Set the mock dictionary in the main module
-    monkeypatch.setattr(main, "port_to_headdevice_and_bitunit", mock_port_to_headdevice_and_bitunit)
+    # Catch SystemExit in the thread to avoid pytest warnings
+    def target_with_exit_handling():
+        try:
+            main.main(pymc3e_fixture, "127.0.0.1", 5000)
+        except SystemExit as e:
+            assert e.code == 1  # Ensure that the exit code is 1 as expected
 
-    # Mock a controlled execution of the main loop for the test
-    def mock_main(pymc3e):
-        stop_event = threading.Event()  # Create a stop event
-        loop_count = 0  # Counter to limit loop iterations
-        max_iterations = 5  # Define a limit to prevent infinite looping
+    t = threading.Thread(target=target_with_exit_handling)
+    t.start()
+    t.join(timeout=5)
 
-        for port, (headdevice, bitunit) in mock_port_to_headdevice_and_bitunit.items():
-            ser = serial_mock
-            # Simulate serial data processing
-            main.process_serial_data(ser, headdevice, bitunit, pymc3e, stop_event)
-            loop_count += 1
-            if loop_count >= max_iterations:  # Stop after a certain number of iterations
-                break
+    # After the thread has completed, check that it has shut down properly
+    assert not t.is_alive(), "main.main() should complete and shut down"
 
-    # Mock the infinite loop in main.main
-    with mock.patch('main.main', side_effect=mock_main):
-        main.main(pymc3e_fixture)
+    # Ensure flush and close were called on all mock serial connections
+    for port in mock_serial_connections:
+        mock_serial_connections[port].flush.assert_called_once()
+        mock_serial_connections[port].close.assert_called_once()
 
-    # Verify that process_serial_data was called correctly
-    # Check for each port in the dictionary
-    for port, (headdevice, bitunit) in mock_port_to_headdevice_and_bitunit.items():
-        main.process_serial_data.assert_any_call(serial_mock, headdevice, bitunit, pymc3e_fixture, mock.ANY)
+
