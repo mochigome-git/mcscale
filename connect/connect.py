@@ -23,36 +23,27 @@ def initialize_connection(plc_ip, plc_port, logger, retries=5, delay=2):
     raise ConnectionError("Failed to connect to PLC after multiple attempts.")
 
 
+def ping_host(host, logger, retries=3, timeout=5):
+    """Ping the PLC to check if it is reachable with retries and timeout."""
+    ping_path = "/bin/ping"  
 
-def ping_host(host, logger, timeout_sec=5, max_attempts=3):
-    """Ping the PLC with timeout and retries."""
-    ping_cmd = ["ping", "-c", "1", "-W", str(timeout_sec), host]
-    
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(1, retries + 1):
         try:
             result = subprocess.run(
-                ping_cmd,
+                [ping_path, "-c", "1", "-W", str(timeout), host],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,  # Ensures proper string decoding
-                timeout=timeout_sec + 1,   # Extra buffer time
+                check=True,
             )
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully pinged {host} (Attempt {attempt}/{max_attempts})")
-                return True
-            else:
-                logger.warning(f"Ping attempt {attempt}/{max_attempts} failed for {host}. Error: {result.stderr or result.stdout}")
-        
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Ping attempt {attempt}/{max_attempts} to {host} timed out after {timeout_sec} sec")
-        except Exception as e:
-            logger.error(f"Unexpected error pinging {host}: {str(e)}")
-        
-        if attempt < max_attempts:
-            time.sleep(1)  # Small delay before retry
-    
-    logger.error(f"All {max_attempts} ping attempts to {host} failed")
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.warning("Ping attempt %d to %s failed. Response: %s", attempt, host, e.stderr.decode())
+        except (ValueError, socket.error) as e:
+            logger.error("Unexpected error while pinging the host: %s", e)
+            break  # Do not retry on unexpected internal errors
+
+        time.sleep(1)  # Optional: wait 1 second before retrying
+
     return False
 
 
