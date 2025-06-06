@@ -23,25 +23,40 @@ def initialize_connection(plc_ip, plc_port, logger, retries=5, delay=2):
     raise ConnectionError("Failed to connect to PLC after multiple attempts.")
 
 
-def ping_host(host, logger):
-    """Ping the PLC to check if it is reachable."""
-    try:
-        ping_path = "/bin/ping"  # Adjust path if necessary
-        subprocess.run(
-            [ping_path, "-c", "1", host],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error("Ping failed to %s. Response: %s", host, e.stderr.decode())
-    except (ValueError, socket.error) as e:
-        logger.error("Unexpected error while pinging the host: %s", e)
+
+def ping_host(host, logger, timeout_sec=5, max_attempts=3):
+    """Ping the PLC with timeout and retries."""
+    ping_cmd = ["ping", "-c", "1", "-W", str(timeout_sec), host]
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            result = subprocess.run(
+                ping_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,  # Ensures proper string decoding
+                timeout=timeout_sec + 1,   # Extra buffer time
+            )
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully pinged {host} (Attempt {attempt}/{max_attempts})")
+                return True
+            else:
+                logger.warning(f"Ping attempt {attempt}/{max_attempts} failed for {host}. Error: {result.stderr or result.stdout}")
+        
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Ping attempt {attempt}/{max_attempts} to {host} timed out after {timeout_sec} sec")
+        except Exception as e:
+            logger.error(f"Unexpected error pinging {host}: {str(e)}")
+        
+        if attempt < max_attempts:
+            time.sleep(1)  # Small delay before retry
+    
+    logger.error(f"All {max_attempts} ping attempts to {host} failed")
     return False
 
 
-def check_connection(pymc3e, plc_ip, plc_port, logger, retry_attempts=3, retry_delay=5):
+def check_connection(pymc3e, plc_ip, plc_port, logger, retry_attempts=8, retry_delay=5):
     """Check if the PLC is still connected using ping."""
     try:
         # First, ping the PLC to check its availability

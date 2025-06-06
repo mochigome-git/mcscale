@@ -1,7 +1,7 @@
 services:
   mcscale:
     #  build: .
-    image: mochigome/mcscale:1.0v
+    image: mcscale:1.0v
     restart: always
     volumes:
       - .:/home/admin/mcscale
