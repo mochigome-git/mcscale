@@ -251,10 +251,9 @@ def reset_plc_if_timeout(
             state["last_update_time"] = 0
             state["last_weight"] = 0
             logger.info("Reset PLC data and bit unit due to timeout.")
-        except pymc3e.mcprotocolerror.MCProtocolError as e:
+        except (socket.timeout, TimeoutError, OSError) as e:
             logger.error("Failed to reset PLC data: %s", e)
             stop_event.set()
-
 
 def smode_process_serial_data(context):
     """
