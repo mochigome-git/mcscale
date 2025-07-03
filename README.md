@@ -69,9 +69,23 @@ sudo pip install --break-system-packages python-dotenv
 1. Set up your serial ports in the ```serial_ports``` dictionary.
 2. Configure the PLC connection with the appropriate IP and port.
 3. Run the script:
-```bash
-python3 main.py
-```
+    ```bash
+    python3 main.py
+    ```
+
+
+#### 5. Monitor Script Setup
+
+1. **Make the script executable**
+    ```bash
+    chmod +x monitor-mcscale.sh
+    ```
+
+2. **Run the watchdog in background or as a systemd service**
+    ```bash
+    nohup ./monitor-mcscale.sh &
+    ```
+
 
 ## Notes
 - Ensure that your serial devices are connected properly and the paths in the serial_ports dictionary are correctly specified.
@@ -79,3 +93,4 @@ python3 main.py
 
 ## License
 This project is licensed under the Apache License - see the [```LICENSE```](LICENSE) file for details.
+
