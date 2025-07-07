@@ -14,6 +14,30 @@ Required Packages:
 - ```pyserial```: Used for serial communication
 - ```pymcprotocol```: Used for communication with the PLC. More details check [senrust/pymcprotocol](https://github.com/senrust/pymcprotocol)
 
+## Setup
+#### 1. Install Raspi-config
+```bash
+sudo apt install raspi-config
+```
+#### 2. Configure LAN and IP
+```bash
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses:
+        - 192.168.3.35/24  # your static IP and subnet mask
+      gateway4: 192.168.3.254   # your gateway IP
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 192.100.0.37
+```
+```bash
+sudo netplan apply
+```
+
 ## Installation
 #### 1. Install pyserial:
 ```bash
