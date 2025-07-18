@@ -16,6 +16,7 @@ COPY . .
 
 CMD ["python", "-u", "main.py"]
 
-# docker build --tag mcscale:1.0v .
-# docker tag mcscale:1.0v mochigome/mcscale:1.0v
-# docker push mochigome/mcscale:1.0v
+# docker build --tag mcscale:1.2.2v .
+# docker tag mcscale:1.2.2v mochigome/mcscale:1.2.2v
+# docker push mochigome/mcscale:1.2.2v
+

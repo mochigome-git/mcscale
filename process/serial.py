@@ -190,13 +190,13 @@ def process_weight_data_2(message, state, ser, pymc3e, headdevice, bitunit, logg
         if target_value < 100:
             return False
 
-        if target_value > state["last_weight"]:
+        if target_value > 100:
             state["last_weight"] = target_value
             logger.info("Received weight data from %s: %s", ser.port, cleaned_data)
             converted_values = utility.split_32bit_to_16bit(state["last_weight"])
             pymc3e.batchwrite_wordunits(headdevice=headdevice, values=converted_values)
 
-            pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
+            #pymc3e.batchwrite_bitunits(headdevice=bitunit, values=[1])
             state["last_update_time"] = time.time()
             logger.info(
                 "Updated PLC with weight: %d and activated bit unit.",
@@ -311,9 +311,9 @@ def smode_process_serial_data(context):
                 logger.error("Could not decode data: %s", state["buffer"].hex())
                 state["buffer"] = b""
 
-        reset_plc_if_timeout(
-            state, pymc3e, headdevice, bitunit, logger, stop_event, data_in_progress
-        )
+      # reset_plc_if_timeout(
+      #     state, pymc3e, headdevice, bitunit, logger, stop_event, data_in_progress
+      # )
         time.sleep(0.1)
 
     except (ValueError, socket.error) as e:

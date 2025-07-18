@@ -17,7 +17,7 @@ pymc3e = pymcprotocol.Type3E(plctype="iQ-L")
 # もしMCプロトコルのアクセス経路をデフォルトから変更する場合もこのメソッドから可能です.
 # pymc3e.setaccessopt(commtype="ascii")
 # PLCに設定したIPアドレス, MCプロトコル用ポートに接続
-pymc3e.connect("192.168.3.82", 5015)
+pymc3e.connect("192.168.3.72", 5014)
 
 
 def convert_to_base256(value):
@@ -80,11 +80,11 @@ def split_32bit_to_16bit(value):
 #
 # D10からD15まで与えた数値を書き込み
 # Example usage:
-target_value = 250
+target_value = 5500
 converted_values = split_32bit_to_16bit(target_value)
 # print(f"Converted values (32-bit split into 16-bit): {converted_values}")
 # Write the split 16-bit values to the PLC
-pymc3e.batchwrite_wordunits(headdevice="D6464", values=converted_values)
+pymc3e.batchwrite_wordunits(headdevice="D6364", values=converted_values)
 #
 # #Y10からY15まで与えた数値を書き込み(ビットデバイスアクセス)
 # pymc3e.batchwrite_bitunits(headdevice="M3300", values=[1])

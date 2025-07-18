@@ -1,7 +1,11 @@
 services:
   mcscale:
     #  build: .
+<<<<<<< HEAD
     image: mcscale:1.0v
+=======
+    image: mochigome/mcscale:1.1v
+>>>>>>> 6af8964 (	modified:   dev_test/pytoplc/plccontrol.py)
     restart: always
     volumes:
       - .:/home/admin/mcscale
