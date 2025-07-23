@@ -89,6 +89,37 @@ sudo pip install --break-system-packages python-dotenv
     - "/dev/serial/by-id/usb-FTDI_USB_Serial_ABC123-if00-port0:/dev/ttyUSB0"
     ```
 
+#### 5. Setup USB-Monitor Service
+
+1. **Create system service**
+```bash
+sudo nano /etc/systemd/system/msc-usb-monitor.service
+```
+```bash
+
+[Unit]
+Description=USB Monitor Service
+After=network.target
+
+[Service]
+ExecStart=/home/admin/mcscale/monitor-mcscale.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. **Restart daemon and enable service**
+```bash
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl enable msc-usb-monitor.service
+sudo systemctl start msc-usb-monitor.service
+```
+
 ## Usage
 1. Set up your serial ports in the ```serial_ports``` dictionary.
 2. Configure the PLC connection with the appropriate IP and port.

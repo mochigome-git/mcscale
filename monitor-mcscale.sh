@@ -1,26 +1,21 @@
 #!/bin/bash
 
-CONTAINER_NAME="mcscale-mcscale-1"
-LOG_TAG="[MCScale Watchdog]"
+EXPECTED_COUNT=3
+SERVICE_NAME="mcs-usb-monitor"
+LOG_TAG="[USB Monitor][$SERVICE_NAME]"
 
-echo "$LOG_TAG Monitoring Docker container: $CONTAINER_NAME"
+# Count current ttyUSB devices
+count=$(ls /dev/ttyUSB* 2>/dev/null | wc -l)
 
-while true; do
-  STATUS=$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null)
+if [ "$count" -lt "$EXPECTED_COUNT" ]; then
+    echo "$LOG_TAG Detected only $count USB devices. Expected $EXPECTED_COUNT."
+    echo "$LOG_TAG Rebooting system due to missing USB devices..."
 
-  if [ "$STATUS" != "true" ]; then
-    echo "$LOG_TAG Container is not running! Attempting restart and USB reset..."
+    # Optional: write to a log file for diagnostics
+    echo "$(date) - [$SERVICE_NAME] USB device count $count < $EXPECTED_COUNT. Rebooting." >> /var/log/usb-monitor.log
 
-    # Reset all USB devices (requires root)
-    for usb_dev in /sys/bus/usb/devices/*; do
-    echo "${usb_dev##*/}" | sudo tee /sys/bus/usb/drivers/usb/unbind
-    echo "${usb_dev##*/}" | sudo tee /sys/bus/usb/drivers/usb/bind
-    done
-
-    # Restart container
-    docker compose -f docker-compose-production.yml restart "$CONTAINER_NAME"
-    sleep 5
-  fi
-
-  sleep 10  # check every 10 seconds
-done
+    # Reboot the system
+    sudo reboot
+else
+    echo "$LOG_TAG All $EXPECTED_COUNT USB devices present."
+fi
