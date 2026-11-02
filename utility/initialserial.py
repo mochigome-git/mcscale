@@ -1,56 +1,128 @@
 
+import os
 import time
 import sys
 import logging
 import serial
 
-# Map string values to the corresponding `serial` constants
+# -----------------------------------------------------------------------------
+# Fallback serial settings (used when a value is missing or invalid in .env)
+# -----------------------------------------------------------------------------
+DEFAULT_SERIAL_SETTINGS = {
+    "baudrate": 19200,
+    "bytesize": "SEVENBITS",
+    "parity": "EVEN",
+    "stopbits": "ONE",
+    "timeout": 1.0,
+}
+
+# Map string values to the corresponding `serial` constants.
+# Both the long names and short aliases are accepted (e.g. SEVENBITS or 7).
 bytesize_map = {
-    'FIVEBITS': serial.FIVEBITS,
-    'SIXBITS': serial.SIXBITS,
-    'SEVENBITS': serial.SEVENBITS,
-    'EIGHTBITS': serial.EIGHTBITS
+    'FIVEBITS': serial.FIVEBITS, '5': serial.FIVEBITS,
+    'SIXBITS': serial.SIXBITS, '6': serial.SIXBITS,
+    'SEVENBITS': serial.SEVENBITS, '7': serial.SEVENBITS,
+    'EIGHTBITS': serial.EIGHTBITS, '8': serial.EIGHTBITS,
 }
 
 parity_map = {
-    'NONE': serial.PARITY_NONE,
-    'EVEN': serial.PARITY_EVEN,
-    'ODD': serial.PARITY_ODD,
-    'MARK': serial.PARITY_MARK,
-    'SPACE': serial.PARITY_SPACE
+    'NONE': serial.PARITY_NONE, 'N': serial.PARITY_NONE,
+    'EVEN': serial.PARITY_EVEN, 'E': serial.PARITY_EVEN,
+    'ODD': serial.PARITY_ODD, 'O': serial.PARITY_ODD,
+    'MARK': serial.PARITY_MARK, 'M': serial.PARITY_MARK,
+    'SPACE': serial.PARITY_SPACE, 'S': serial.PARITY_SPACE,
 }
 
 stopbits_map = {
-    'ONE': serial.STOPBITS_ONE,
-    'TWO': serial.STOPBITS_TWO
+    'ONE': serial.STOPBITS_ONE, '1': serial.STOPBITS_ONE,
+    'ONE_POINT_FIVE': serial.STOPBITS_ONE_POINT_FIVE, '1.5': serial.STOPBITS_ONE_POINT_FIVE,
+    'TWO': serial.STOPBITS_TWO, '2': serial.STOPBITS_TWO,
 }
 
-def initialize_serial_connections(serial_ports, baudrate=19200, bytesize='SEVENBITS', parity='EVEN', stopbits='ONE', timeout=1):
+
+def _env(name):
+    """Return a cleaned env value, or None if unset/empty."""
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip().strip('"').strip("'").strip()
+    return value or None
+
+
+def load_serial_settings():
+    """
+    Load serial settings from environment variables, falling back to
+    DEFAULT_SERIAL_SETTINGS for anything missing or invalid.
+
+    Environment variables
+    ---------------------
+    SERIAL_BAUDRATE : int     e.g. 9600, 19200
+    SERIAL_BYTESIZE : str     FIVEBITS|SIXBITS|SEVENBITS|EIGHTBITS (or 5|6|7|8)
+    SERIAL_PARITY   : str     NONE|EVEN|ODD|MARK|SPACE (or N|E|O|M|S)
+    SERIAL_STOPBITS : str     ONE|ONE_POINT_FIVE|TWO (or 1|1.5|2)
+    SERIAL_TIMEOUT  : float   seconds, e.g. 1 or 0.5
+    """
+    settings = dict(DEFAULT_SERIAL_SETTINGS)
+
+    # Baudrate
+    raw = _env("SERIAL_BAUDRATE")
+    if raw is not None:
+        try:
+            baud = int(raw)
+            if baud <= 0:
+                raise ValueError
+            settings["baudrate"] = baud
+        except ValueError:
+            logging.warning("Invalid SERIAL_BAUDRATE=%r, using fallback %s",
+                            raw, settings["baudrate"])
+
+    # Bytesize / parity / stopbits
+    for key, env_name, mapping in (
+        ("bytesize", "SERIAL_BYTESIZE", bytesize_map),
+        ("parity", "SERIAL_PARITY", parity_map),
+        ("stopbits", "SERIAL_STOPBITS", stopbits_map),
+    ):
+        raw = _env(env_name)
+        if raw is None:
+            continue
+        if raw.upper() in mapping:
+            settings[key] = raw.upper()
+        else:
+            logging.warning("Invalid %s=%r, using fallback %s (allowed: %s)",
+                            env_name, raw, settings[key], ", ".join(mapping))
+
+    # Timeout
+    raw = _env("SERIAL_TIMEOUT")
+    if raw is not None:
+        try:
+            timeout = float(raw)
+            if timeout < 0:
+                raise ValueError
+            settings["timeout"] = timeout
+        except ValueError:
+            logging.warning("Invalid SERIAL_TIMEOUT=%r, using fallback %s",
+                            raw, settings["timeout"])
+
+    return settings
+
+
+def initialize_serial_connections(serial_ports, baudrate=None, bytesize=None,
+                                  parity=None, stopbits=None, timeout=None):
     """
     Initializes serial connections for all ports in the serial_ports dictionary.
 
-    Serial communication settings:
-    
+    Priority for each setting:
+        1. Argument passed to this function
+        2. Value from .env (SERIAL_BAUDRATE, SERIAL_BYTESIZE, ...)
+        3. DEFAULT_SERIAL_SETTINGS fallback
+
     Parameters
     ----------
     serial_ports : dict
         Dictionary of serial ports where the key is the port name and the value is a serial object.
+    baudrate, bytesize, parity, stopbits, timeout : optional
+        Explicit overrides. Leave as None to use .env / fallback values.
 
-    baudrate : int, optional
-        Communication speed in baud, default is 9600.
-    
-    bytesize : str, optional
-        Number of data bits ('FIVEBITS', 'SIXBITS', 'SEVENBITS', 'EIGHTBITS'), default is 'SEVENBITS'.
-    
-    parity : str, optional
-        Parity check ('NONE', 'EVEN', 'ODD', 'MARK', 'SPACE'), default is 'EVEN'.
-    
-    stopbits : str, optional
-        Number of stop bits ('ONE', 'TWO'), default is 'ONE'.
-    
-    timeout : float, optional
-        Timeout in seconds for the serial connection, default is 1 second.
-    
     Raises
     ------
     SerialException
@@ -59,6 +131,18 @@ def initialize_serial_connections(serial_ports, baudrate=19200, bytesize='SEVENB
 
     # Configure logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    env_settings = load_serial_settings()
+    baudrate = baudrate if baudrate is not None else env_settings["baudrate"]
+    bytesize = (bytesize or env_settings["bytesize"]).upper()
+    parity = (parity or env_settings["parity"]).upper()
+    stopbits = (stopbits or env_settings["stopbits"]).upper()
+    timeout = timeout if timeout is not None else env_settings["timeout"]
+
+    logging.info(
+        "Serial settings: baudrate=%s, bytesize=%s, parity=%s, stopbits=%s, timeout=%s",
+        baudrate, bytesize, parity, stopbits, timeout,
+    )
 
     for port in serial_ports.keys():
         try:
@@ -75,7 +159,7 @@ def initialize_serial_connections(serial_ports, baudrate=19200, bytesize='SEVENB
         except serial.SerialException as e:
             logging.error("Failed to open serial port %s: %s", port, e)
             serial_ports[port] = None  # Mark as None to retry later
-    
+
     return serial_ports
 
 def send_ping_token(ser, max_retries=3):
