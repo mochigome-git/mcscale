@@ -1,0 +1,7 @@
+# Minimal dependencies needed to run main.py inside Docker.
+# Both are pure-Python wheels, so they install on every platform
+# (linux/amd64, linux/arm64, linux/arm/v7) without compiling.
+#
+# requirements.txt keeps the full Raspberry Pi dev/test set (GPIO libs etc.).
+pymcprotocol==0.3.0
+pyserial==3.3

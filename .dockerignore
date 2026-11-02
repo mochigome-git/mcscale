@@ -1,0 +1,26 @@
+# Secrets / local config — never bake into a pushed image
+.env
+*.env
+!example.env
+
+# VCS and CI
+.git
+.github
+.gitignore
+
+# Offline package caches used by docker-compose-dev.yml
+python_cache/
+apt_cache/
+
+# Dev-only code and tests
+dev_test/
+tests/
+
+# Python build/cache artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.tgz
+*.gz
